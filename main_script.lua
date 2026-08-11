@@ -1,5 +1,5 @@
 -- =====================================================================
--- KAITUN BLOX FRUITS v7 - FIX FAST ATTACK
+-- KAITUN BLOX FRUITS v7 - FIX FAST ATTACK & BRING MOB ANTI-CHEAT
 -- =====================================================================
 
 if not game:IsLoaded() then game.Loaded:Wait() end
@@ -21,9 +21,9 @@ getgenv().KaitunSettings = getgenv().KaitunSettings or {
     AutoBusoHaki = true,
     FastAttack = true,
     BringMob = true,
-    BringDistance = 25,
+    BringDistance = 5, -- Giảm khoảng cách kéo để tránh lỗi tọa độ 50k Y axis
     BringRange = 2500,
-    FarmHeight = 30,
+    FarmHeight = 25,
 }
 
 -- ==================== ANTI-AFK ====================
@@ -125,39 +125,13 @@ local function EquipTool(toolType)
     return false
 end
 
--- ==================== TÌM MOB ====================
-local function FindMob(mobName)
-    for _, folder in pairs({Workspace:FindFirstChild("Enemies"), ReplicatedStorage}) do
-        if folder then
-            for _, mob in pairs(folder:GetChildren()) do
-                local match = false
-                if type(mobName) == "string" then
-                    match = (mob.Name == mobName or string.find(mob.Name, mobName))
-                elseif type(mobName) == "table" then
-                    for _, n in ipairs(mobName) do
-                        if mob.Name == n or string.find(mob.Name, n) then match = true break end
-                    end
-                end
-                if match and mob:FindFirstChild("Humanoid") and mob.Humanoid.Health > 0 
-                   and mob:FindFirstChild("HumanoidRootPart") then
-                    return mob
-                end
-            end
-        end
-    end
-    return nil
-end
-
--- ==================== 🔥 BRING ALL MOB (Fix không bay quá cao) ====================
+-- ==================== 🔥 BRING ALL MOB (Đã fix chống lỗi trục Y & Server Anti-Cheat) ====================
 local function BringAllMobs(mobName)
     if not getgenv().KaitunSettings.BringMob then return end
     local root = GetRoot()
     if not root then return end
     local enemies = Workspace:FindFirstChild("Enemies")
     if not enemies then return end
-    
-    -- Kéo mob về DƯỚI player (không bay lên trời)
-    local bringPos = root.CFrame * CFrame.new(0, -getgenv().KaitunSettings.BringDistance, 0)
     
     for _, mob in pairs(enemies:GetChildren()) do
         local match = false
@@ -174,8 +148,9 @@ local function BringAllMobs(mobName)
             local h = mob:FindFirstChild("Humanoid")
             if hrp and h and h.Health > 0 then
                 local dist = (hrp.Position - root.Position).Magnitude
-                if dist <= getgenv().KaitunSettings.BringRange then
-                    hrp.CFrame = bringPos
+                if dist <= getgenv().KaitunSettings.BringRange and dist > 4 then
+                    -- Gom quái bám sát vị trí ngang với player, không bị đẩy lệch trục Y quá mức gây lỗi server
+                    hrp.CFrame = root.CFrame * CFrame.new(0, 0, -3)
                     hrp.CanCollide = false
                     pcall(function()
                         hrp.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
@@ -188,16 +163,13 @@ local function BringAllMobs(mobName)
 end
 
 -- =====================================================================
--- ==================== 🎯 FAST ATTACK - FIX HOÀN TOÀN ====================
+-- ==================== 🎯 FAST ATTACK - FIX CHUẨN XÁC ====================
 -- =====================================================================
--- Từ code NTT HUB: cần format đúng args[4] và fire RegisterAttack per mob
-
 local function GetAllHitsInRange(range)
     local root = GetRoot()
     if not root then return {} end
     local hits = {}
     
-    -- Duyệt Enemies
     local enemies = Workspace:FindFirstChild("Enemies")
     if enemies then
         for _, mob in pairs(enemies:GetChildren()) do
@@ -210,114 +182,12 @@ local function GetAllHitsInRange(range)
             end
         end
     end
-    
     return hits
 end
 
--- Fast Attack theo NTT HUB (format đúng)
-local function FastAttackAll()
-    pcall(function()
-        local char = GetChar()
-        if not char then return end
-        local root = char:FindFirstChild("HumanoidRootPart")
-        if not root then return end
-        local tool = char:FindFirstChildOfClass("Tool")
-        if not tool then return end
-        
-        local toolType = tool.ToolTip
-        if not (toolType == "Melee" or toolType == "Sword") then return end
-        
-        local hits = GetAllHitsInRange(65)
-        if #hits == 0 then return end
-        
-        -- ============ CÁCH 1: NTT HUB Original Format ============
-        local args = {
-            [1] = nil,            -- Head của mob đầu tiên
-            [2] = {},             -- Array chứa {mob, hrp}
-            [4] = "078da341",    -- Magic string từ NTT HUB
-        }
-        
-        for i, mob in ipairs(hits) do
-            RegisterAttack:FireServer(0) -- Fire attack cho mỗi mob
-            if not args[1] then 
-                args[1] = mob.Head 
-            end
-            args[2][i] = {
-                [1] = mob,
-                [2] = mob.HumanoidRootPart,
-            }
-        end
-        
-        RegisterHit:FireServer(unpack(args))
-    end)
-end
-
--- ============ CÁCH 2: Backup - Simple RegisterHit ============
-local function SimpleAttack()
-    pcall(function()
-        local char = GetChar()
-        if not char then return end
-        local tool = char:FindFirstChildOfClass("Tool")
-        if not tool then return end
-        if tool.ToolTip ~= "Melee" and tool.ToolTip ~= "Sword" then return end
-        
-        local hits = GetAllHitsInRange(65)
-        if #hits == 0 then return end
-        
-        local bladehits = {}
-        for i, mob in ipairs(hits) do
-            table.insert(bladehits, {mob, mob.HumanoidRootPart})
-        end
-        
-        RegisterAttack:FireServer()
-        RegisterHit:FireServer(hits[1].Head, bladehits)
-    end)
-end
-
--- ============ CÁCH 3: Fire ClickToAttack (backup nữa) ============
-local function ToolActivate()
-    pcall(function()
-        local char = GetChar()
-        if not char then return end
-        local tool = char:FindFirstChildOfClass("Tool")
-        if not tool then return end
-        tool:Activate()
-    end)
-end
-
--- ==================== LOOP FAST ATTACK ====================
--- Chạy nhiều loop với các cách khác nhau để đảm bảo hit
-
--- Loop 1: Original NTT HUB (nhanh nhất)
+-- Fast Attack chính chạy mượt mà
 task.spawn(function()
-    while task.wait(0.05) do
-        if getgenv().KaitunSettings.FastAttack then
-            FastAttackAll()
-        end
-    end
-end)
-
--- Loop 2: Simple attack (backup)
-task.spawn(function()
-    while task.wait(0.1) do
-        if getgenv().KaitunSettings.FastAttack then
-            SimpleAttack()
-        end
-    end
-end)
-
--- Loop 3: Tool Activate
-task.spawn(function()
-    while task.wait(0.15) do
-        if getgenv().KaitunSettings.FastAttack then
-            ToolActivate()
-        end
-    end
-end)
-
--- Loop 4: Advanced attack (từ code cuối NTT HUB - dùng Modules Net)
-task.spawn(function()
-    while task.wait(0.05) do
+    while task.wait(0.03) do
         pcall(function()
             if not getgenv().KaitunSettings.FastAttack then return end
             local char = GetChar()
@@ -326,29 +196,33 @@ task.spawn(function()
             if not root then return end
             local tool = char:FindFirstChildOfClass("Tool")
             if not tool then return end
-            if tool.ToolTip ~= "Melee" and tool.ToolTip ~= "Sword" then return end
             
-            local bladehits = {}
-            local enemies = Workspace:FindFirstChild("Enemies")
-            if not enemies then return end
+            local toolType = tool.ToolTip
+            if not (toolType == "Melee" or toolType == "Sword") then return end
             
-            for _, mob in pairs(enemies:GetChildren()) do
-                if mob:FindFirstChild("Humanoid") and mob:FindFirstChild("HumanoidRootPart") 
-                   and mob.Humanoid.Health > 0
-                   and (mob.HumanoidRootPart.Position - root.Position).Magnitude <= 65 then
-                    table.insert(bladehits, mob)
-                end
-            end
+            local hits = GetAllHitsInRange(60)
+            if #hits == 0 then return end
             
-            if #bladehits == 0 then return end
+            local args = {
+                [1] = nil,
+                [2] = {},
+                [4] = "078da341",
+            }
             
-            local args = {[1] = nil, [2] = {}, [4] = "078da341"}
-            for r, v in pairs(bladehits) do
+            for i, mob in ipairs(hits) do
                 RegisterAttack:FireServer(0)
-                if not args[1] then args[1] = v.Head end
-                args[2][r] = {[1] = v, [2] = v.HumanoidRootPart}
+                if not args[1] then 
+                    args[1] = mob:FindFirstChild("Head") or mob.PrimaryPart
+                end
+                args[2][i] = {
+                    [1] = mob,
+                    [2] = mob:FindFirstChild("HumanoidRootPart"),
+                }
             end
-            RegisterHit:FireServer(unpack(args))
+            
+            if args[1] then
+                RegisterHit:FireServer(unpack(args))
+            end
         end)
     end
 end)
@@ -581,7 +455,6 @@ task.spawn(function()
                 end
             else
                 if not farmStuckPos then
-                    -- Vị trí đứng: TRÊN CAO area mob (không quá cao)
                     farmStuckPos = mobAreaCF + Vector3.new(0, getgenv().KaitunSettings.FarmHeight, 0)
                 end
                 
@@ -590,17 +463,12 @@ task.spawn(function()
                     return
                 end
                 
-                -- Giữ vị trí
                 root.CFrame = CFrame.new(farmStuckPos.Position or farmStuckPos)
                 pcall(function() root.AssemblyLinearVelocity = Vector3.new(0, 0, 0) end)
                 
-                -- Equip melee
                 EquipTool("Melee")
-                
-                -- Bring mob
                 BringAllMobs(mobName)
                 
-                -- Check quest sai
                 if questGui.Container and questGui.Container:FindFirstChild("QuestTitle") 
                    and questGui.Container.QuestTitle:FindFirstChild("Title") then
                     local title = questGui.Container.QuestTitle.Title.Text
@@ -659,10 +527,9 @@ end)
 
 print([[
 ╔══════════════════════════════════════════════════════╗
-║  🎯 KAITUN v7 - FIX FAST ATTACK                      ║
-║  ✅ 4 loops attack song song                         ║
-║  ✅ Args format đúng NTT HUB                         ║
-║  ✅ Bring all + Attack all                           ║
+║  🎯 KAITUN v7 - FIXED ANTI-CHEAT & FAST ATTACK       ║
+║  ✅ Đã fix lỗi tọa độ quái vượt trục Y 50k           ║
+║  ✅ Fast Attack nhận sát thương trực tiếp chuẩn      ║
 ╚══════════════════════════════════════════════════════╝
 ]])
 print("[Kaitun] Level: " .. GetLevel() .. " | Team: " .. getgenv().KaitunSettings.Team)
