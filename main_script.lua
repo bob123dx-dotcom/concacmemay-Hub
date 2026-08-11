@@ -1,6 +1,6 @@
 -- =====================================================================
--- KAITUN BLOX FRUITS v5 FINAL - Dựa trên NTT HUB
--- Auto Team + Auto Farm + Fast Attack + Full 3 Sea
+-- KAITUN BLOX FRUITS v6 - BRING ALL MOB + SMOOTH FARM
+-- Fix: Bring all mobs, tween mượt, không giật
 -- =====================================================================
 
 if not game:IsLoaded() then game.Loaded:Wait() end
@@ -13,22 +13,22 @@ local RunService = game:GetService("RunService")
 local Workspace = game:GetService("Workspace")
 local VirtualUser = game:GetService("VirtualUser")
 local VirtualInputManager = game:GetService("VirtualInputManager")
-local TeleportService = game:GetService("TeleportService")
-local HttpService = game:GetService("HttpService")
 
 -- ==================== CẤU HÌNH ====================
 getgenv().KaitunSettings = getgenv().KaitunSettings or {
-    Team = "Pirates",           -- "Pirates" hoặc "Marines"
+    Team = "Pirates",
     AutoLevel = true,
     AutoStats = true,
-    StatsType = "Melee",        -- "Melee", "Defense", "Sword", "Gun", "Demon Fruit"
+    StatsType = "Melee",
     AutoBusoHaki = true,
     FastAttack = true,
-    AttackDistance = 25,
-    ShowLog = true,
+    BringMob = true,          -- Bring all mob về player
+    BringDistance = 25,       -- Khoảng cách kéo mob (âm = dưới)
+    BringRange = 2000,        -- Bán kính tìm mob để kéo
+    AttackHeight = 20,        -- Chiều cao teleport lên đầu mob
 }
 
-_G.distance = getgenv().KaitunSettings.AttackDistance
+_G.distance = getgenv().KaitunSettings.AttackHeight
 
 -- ==================== ANTI-AFK ====================
 LocalPlayer.Idled:Connect(function()
@@ -39,7 +39,7 @@ end)
 -- ==================== REMOTES ====================
 local CommF = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("CommF_")
 
--- ==================== HÀM TIỆN ÍCH ====================
+-- ==================== TIỆN ÍCH ====================
 local function GetChar() return LocalPlayer.Character end
 local function GetRoot() 
     local c = GetChar()
@@ -54,24 +54,10 @@ local function GetLevel()
     return ok and v or 1
 end
 
-local function Log(msg)
-    if getgenv().KaitunSettings.ShowLog then
-        print("[Kaitun] " .. msg)
-    end
-end
+local function IsSea1() return game.PlaceId == 2753915549 or game.PlaceId == 85211729168715 end
+local function IsSea2() return game.PlaceId == 4442272183 or game.PlaceId == 79091703265657 end
+local function IsSea3() return game.PlaceId == 7449423635 or game.PlaceId == 100117331123089 end
 
--- ==================== CHECK SEA (từ NTT HUB) ====================
-local function IsSea1()
-    return game.PlaceId == 2753915549 or game.PlaceId == 85211729168715
-end
-local function IsSea2()
-    return game.PlaceId == 4442272183 or game.PlaceId == 79091703265657
-end
-local function IsSea3()
-    return game.PlaceId == 7449423635 or game.PlaceId == 100117331123089
-end
-
--- ==================== KHOẢNG CÁCH ====================
 local function Distance(target)
     local root = GetRoot()
     if not root then return math.huge end
@@ -83,87 +69,71 @@ local function Distance(target)
     return math.huge
 end
 
--- ==================== TWEEN VỚI PART PROXY (Kỹ thuật NTT HUB) ====================
-if not Workspace:FindFirstChild("p_ntt") then
-    local part = Instance.new("Part")
-    part.Name = "p_ntt"
-    part.Size = Vector3.new(5, 5, 5)
-    part.Position = Vector3.new(0, 10, 0)
-    part.Anchored = true
-    part.CanCollide = false
-    part.Transparency = 1
-    part.Parent = Workspace
-end
+-- ==================== ENABLE SIMULATION RADIUS ====================
+task.spawn(function()
+    while task.wait(0.5) do
+        pcall(function()
+            if setscriptable and sethiddenproperty then
+                setscriptable(LocalPlayer, "SimulationRadius", true)
+                sethiddenproperty(LocalPlayer, "SimulationRadius", math.huge)
+                sethiddenproperty(LocalPlayer, "MaximumSimulationRadius", math.huge)
+            end
+        end)
+    end
+end)
 
-local function TweenTo(targetCFrame)
+-- ==================== TELEPORT TRỰC TIẾP (thay tween proxy) ====================
+-- Không dùng part proxy nữa vì gây lag "over 50k y axis"
+local function TeleportTo(cf)
     local root = GetRoot()
     if not root then return end
-    local proxy = Workspace:FindFirstChild("p_ntt")
-    if not proxy then return end
-    
-    -- Nếu proxy quá xa player thì reset
-    if (proxy.Position - root.Position).Magnitude >= 201 then
-        local reset = TweenService:Create(proxy, TweenInfo.new(0), {CFrame = root.CFrame})
-        reset:Play()
+    -- Chỉ CFrame trực tiếp, không tween (nhanh và không giật)
+    root.CFrame = cf
+    root.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+    pcall(function() root.Velocity = Vector3.new(0, 0, 0) end)
+end
+
+-- Tween nếu cần di chuyển xa (tránh anti-cheat detect teleport quá xa)
+local function SmartTween(cf)
+    local root = GetRoot()
+    if not root then return end
+    local dist = (root.Position - cf.Position).Magnitude
+    if dist < 2000 then
+        -- Gần thì teleport thẳng
+        TeleportTo(cf)
     else
-        local dist = (targetCFrame.Position - root.Position).Magnitude
-        local speed
-        if dist >= 300 then
-            speed = 150
-        elseif dist < 100 then
-            speed = 9999999
-        else
-            speed = 500
-        end
-        
-        -- Nếu proxy dưới nước thì kéo lên
-        if proxy.CFrame.Y < -2 then
-            proxy.CFrame = CFrame.new(proxy.CFrame.X, proxy.CFrame.Y + 5, proxy.CFrame.Z)
-        end
-        
-        local tween = TweenService:Create(proxy, TweenInfo.new(dist/speed), {CFrame = targetCFrame})
+        -- Xa thì dùng tween
+        local tween = TweenService:Create(root, TweenInfo.new(dist/500, Enum.EasingStyle.Linear), {CFrame = cf})
         tween:Play()
-        root.CFrame = proxy.CFrame
+        tween.Completed:Wait()
     end
 end
 
--- ==================== TRANG BỊ TOOL (từ NTT HUB) ====================
+-- ==================== TRANG BỊ TOOL ====================
 local function EquipTool(toolType)
     local char = GetChar()
-    if not char then return end
+    if not char then return false end
     local backpack = LocalPlayer:FindFirstChild("Backpack")
-    if not backpack then return end
+    if not backpack then return false end
     
-    -- Check đã cầm chưa
     for _, t in pairs(char:GetChildren()) do
-        if t:IsA("Tool") then
-            if t.ToolTip == toolType or t.Name == toolType then
-                return true
-            end
+        if t:IsA("Tool") and (t.ToolTip == toolType or t.Name == toolType) then
+            return true
         end
     end
     
-    -- Equip từ backpack
     for _, t in pairs(backpack:GetChildren()) do
-        if t:IsA("Tool") then
-            if t.ToolTip == toolType or t.Name == toolType then
-                local hum = GetHum()
-                if hum then
-                    hum:EquipTool(t)
-                    return true
-                end
-            end
+        if t:IsA("Tool") and (t.ToolTip == toolType or t.Name == toolType) then
+            local hum = GetHum()
+            if hum then hum:EquipTool(t) return true end
         end
     end
     return false
 end
 
 local function EquipMelee() return EquipTool("Melee") end
-local function EquipSword() return EquipTool("Sword") end
-local function EquipFruit() return EquipTool("Blox Fruit") end
-local function EquipGun() return EquipTool("Gun") end
 
--- ==================== TÌM MOB (từ NTT HUB) ====================
+-- ==================== TÌM MOB ====================
 local function FindMob(mobName)
     local root = GetRoot()
     if not root then return nil end
@@ -171,22 +141,18 @@ local function FindMob(mobName)
     for _, folder in pairs({Workspace:FindFirstChild("Enemies"), ReplicatedStorage}) do
         if folder then
             for _, mob in pairs(folder:GetChildren()) do
+                local match = false
                 if type(mobName) == "string" then
-                    if (mob.Name == mobName or string.find(mob.Name, mobName)) 
-                       and mob:FindFirstChild("Humanoid") 
-                       and mob.Humanoid.Health > 0 
-                       and mob:FindFirstChild("HumanoidRootPart") then
-                        return mob
-                    end
+                    match = (mob.Name == mobName or string.find(mob.Name, mobName))
                 elseif type(mobName) == "table" then
-                    for _, name in ipairs(mobName) do
-                        if (mob.Name == name or string.find(mob.Name, name)) 
-                           and mob:FindFirstChild("Humanoid") 
-                           and mob.Humanoid.Health > 0 
-                           and mob:FindFirstChild("HumanoidRootPart") then
-                            return mob
-                        end
+                    for _, n in ipairs(mobName) do
+                        if mob.Name == n or string.find(mob.Name, n) then match = true break end
                     end
+                end
+                
+                if match and mob:FindFirstChild("Humanoid") and mob.Humanoid.Health > 0 
+                   and mob:FindFirstChild("HumanoidRootPart") then
+                    return mob
                 end
             end
         end
@@ -194,132 +160,98 @@ local function FindMob(mobName)
     return nil
 end
 
--- ==================== BUG MOB - KÉO MOB VỀ (từ NTT HUB sjr_bx) ====================
-local function BugMob(mobName)
+-- ==================== 🔥 BRING ALL MOB (Fix chính!) ====================
+-- Kéo TẤT CẢ mob khớp tên trong bán kính về player
+local function BringAllMobs(mobName)
+    if not getgenv().KaitunSettings.BringMob then return end
     local root = GetRoot()
     if not root then return end
     local enemies = Workspace:FindFirstChild("Enemies")
     if not enemies then return end
     
+    local bringPos = root.CFrame * CFrame.new(0, -getgenv().KaitunSettings.BringDistance, 0)
+    
     for _, mob in pairs(enemies:GetChildren()) do
         local match = false
         if type(mobName) == "string" then
-            match = mob.Name == mobName
+            match = (mob.Name == mobName)
         elseif type(mobName) == "table" then
             for _, n in ipairs(mobName) do
-                if mob.Name == n then match = true; break end
+                if mob.Name == n then match = true break end
             end
         end
         
-        if match and mob:FindFirstChild("HumanoidRootPart") 
-           and Distance(mob.HumanoidRootPart) <= 250 then
-            mob.HumanoidRootPart.CFrame = root.CFrame * CFrame.new(0, _G.distance * -1, 0)
-            mob.HumanoidRootPart.CanCollide = false
-            pcall(function()
-                setscriptable(LocalPlayer, "SimulationRadius", true)
-                sethiddenproperty(LocalPlayer, "SimulationRadius", math.huge)
-            end)
-        end
-    end
-end
-
--- ==================== ATTACK (từ NTT HUB sjr_aq) ====================
-local function AttackWithSkill(skill, position)
-    local char = GetChar()
-    if not char then return end
-    
-    for _, tool in pairs(char:GetChildren()) do
-        if tool.ClassName == "Tool" then
-            pcall(function()
-                tool.RemoteEvent:FireServer(position)
-            end)
-            
-            local hum = char:FindFirstChild("Humanoid")
-            if hum then
-                for _, rf in pairs(hum:GetChildren()) do
-                    if rf.ClassName == "RemoteFunction" then
-                        pcall(function()
-                            rf:InvokeServer(skill, position)
-                        end)
-                    end
+        if match then
+            local hrp = mob:FindFirstChild("HumanoidRootPart")
+            local h = mob:FindFirstChild("Humanoid")
+            if hrp and h and h.Health > 0 then
+                local dist = (hrp.Position - root.Position).Magnitude
+                if dist <= getgenv().KaitunSettings.BringRange then
+                    -- Kéo mob về + disable collision
+                    hrp.CFrame = bringPos
+                    hrp.CanCollide = false
+                    hrp.Anchored = false
+                    -- Không cho mob đi
+                    pcall(function()
+                        hrp.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+                    end)
+                    -- Fix mob size để dễ hit
+                    -- hrp.Size = Vector3.new(50, 50, 20) -- Optional
                 end
             end
-            
-            pcall(function()
-                tool.RemoteEvent:FireServer(position)
-            end)
         end
     end
 end
 
--- ==================== FAST ATTACK - CLICK M1 ====================
-local function FastAttackClick()
+-- ==================== 🎯 FAST ATTACK (Dùng RegisterHit trực tiếp) ====================
+local Net = ReplicatedStorage:WaitForChild("Modules"):WaitForChild("Net")
+local RegisterAttack = Net:WaitForChild("RE/RegisterAttack")
+local RegisterHit = Net:WaitForChild("RE/RegisterHit")
+
+local function FastAttackAll()
     pcall(function()
-        VirtualInputManager:SendMouseButtonEvent(0, 0, 0, true, game, 0)
-        VirtualInputManager:SendMouseButtonEvent(0, 0, 0, false, game, 0)
+        local char = GetChar()
+        if not char then return end
+        local root = char:FindFirstChild("HumanoidRootPart")
+        if not root then return end
+        local tool = char:FindFirstChildOfClass("Tool")
+        if not tool then return end
+        
+        local toolType = tool.ToolTip
+        if not (toolType == "Melee" or toolType == "Sword") then return end
+        
+        -- Thu thập TẤT CẢ mob trong bán kính 65 (theo NTT HUB)
+        local hits = {}
+        local firstHead = nil
+        
+        local enemies = Workspace:FindFirstChild("Enemies")
+        if enemies then
+            for _, mob in pairs(enemies:GetChildren()) do
+                local hrp = mob:FindFirstChild("HumanoidRootPart")
+                local h = mob:FindFirstChild("Humanoid")
+                local head = mob:FindFirstChild("Head")
+                if hrp and h and h.Health > 0 and head 
+                   and (hrp.Position - root.Position).Magnitude <= 65 then
+                    if not firstHead then firstHead = head end
+                    table.insert(hits, {mob, hrp})
+                end
+            end
+        end
+        
+        if firstHead and #hits > 0 then
+            -- Fire attack + hit theo cách NTT HUB
+            RegisterAttack:FireServer()
+            RegisterHit:FireServer(firstHead, hits)
+        end
     end)
 end
 
--- ==================== FAST ATTACK ADVANCED (từ script obfuscated NTT) ====================
-local FastAttackLoop
-local function SetupFastAttack()
-    if FastAttackLoop then return end
-    
-    FastAttackLoop = RunService.Heartbeat:Connect(function()
-        if not getgenv().KaitunSettings.FastAttack then return end
-        pcall(function()
-            local char = GetChar()
-            if not char then return end
-            local root = char:FindFirstChild("HumanoidRootPart")
-            if not root then return end
-            local tool = char:FindFirstChildOfClass("Tool")
-            if not tool then return end
-            
-            local toolType = tool.ToolTip
-            if not (toolType == "Melee" or toolType == "Sword") then return end
-            
-            -- Tìm mobs trong bán kính 60
-            local hits = {}
-            local firstMob = nil
-            local firstPart = nil
-            
-            for _, folder in pairs({Workspace:FindFirstChild("Enemies"), Workspace:FindFirstChild("Characters")}) do
-                if folder then
-                    for _, ent in pairs(folder:GetChildren()) do
-                        if ent ~= char then
-                            local hrp = ent:FindFirstChild("HumanoidRootPart")
-                            local h = ent:FindFirstChild("Humanoid")
-                            local head = ent:FindFirstChild("Head")
-                            if hrp and h and h.Health > 0 and head 
-                               and (hrp.Position - root.Position).Magnitude <= 60 then
-                                if not firstMob then
-                                    firstMob = ent
-                                    firstPart = head
-                                end
-                                table.insert(hits, {ent, hrp})
-                            end
-                        end
-                    end
-                end
-            end
-            
-            if firstMob and firstPart and #hits > 0 then
-                local Net = ReplicatedStorage:FindFirstChild("Modules")
-                if Net then Net = Net:FindFirstChild("Net") end
-                if Net then
-                    local ra = Net:FindFirstChild("RE/RegisterAttack")
-                    local rh = Net:FindFirstChild("RE/RegisterHit")
-                    if ra and rh then
-                        pcall(function()
-                            ra:FireServer()
-                            rh:FireServer(firstPart, hits)
-                        end)
-                    end
-                end
-            end
-        end)
-    end)
-end
+-- Loop Fast Attack
+RunService.Heartbeat:Connect(function()
+    if getgenv().KaitunSettings.FastAttack then
+        FastAttackAll()
+    end
+end)
 
 -- ==================== NO-CLIP ====================
 RunService.Stepped:Connect(function()
@@ -333,8 +265,7 @@ RunService.Stepped:Connect(function()
     end)
 end)
 
--- ==================== BẢNG QUEST FULL (từ NTT HUB sjr_aw) ====================
--- Format: {MobName, QuestName, QuestLevel, NPC_CFrame, Mob_Area_CFrame}
+-- ==================== BẢNG QUEST ====================
 local function GetQuest()
     local lv = GetLevel()
     
@@ -430,48 +361,24 @@ local function GetQuest()
     end
 end
 
--- ==================== STORE FRUIT ====================
-local function StoreFruit()
-    local sources = {GetChar() and GetChar():GetChildren() or {}, LocalPlayer.Backpack:GetChildren()}
-    for i = 1, 2 do
-        for _, tool in pairs(sources[i]) do
-            if tool.ClassName == "Tool" and string.find(tool.Name, "Fruit") then
-                pcall(function()
-                    CommF:InvokeServer("StoreFruit", string.gsub(tool.Name, " Fruit", "") .. "-" .. string.gsub(tool.Name, " Fruit", ""), tool)
-                end)
-            end
-        end
-    end
-end
-
--- =====================================================================
--- ==================== 🎯 AUTO CHỌN TEAM (100% CHÍNH XÁC) ================
--- =====================================================================
+-- ==================== AUTO CHỌN TEAM ====================
 task.spawn(function()
-    task.wait(2)
-    
-    -- Cách chính xác nhất từ NTT HUB
+    task.wait(3)
     for i = 1, 20 do
         pcall(function()
             local pg = LocalPlayer:FindFirstChild("PlayerGui")
             if not pg then return end
-            
-            -- Check "Main (minimal)" - GUI hiện khi chưa chọn team
             local minimal = pg:FindFirstChild("Main (minimal)")
             local mainGui = pg:FindFirstChild("Main")
             local needChoose = false
             
-            if minimal then
-                needChoose = true
+            if minimal then needChoose = true
             elseif mainGui then
                 local ct = mainGui:FindFirstChild("ChooseTeam")
-                if ct and ct.Visible then
-                    needChoose = true
-                end
+                if ct and ct.Visible then needChoose = true end
             end
             
             if needChoose then
-                Log("Đang chọn team: " .. getgenv().KaitunSettings.Team)
                 CommF:InvokeServer("SetTeam", getgenv().KaitunSettings.Team)
             end
         end)
@@ -479,7 +386,6 @@ task.spawn(function()
     end
 end)
 
--- Loop check team liên tục (từ NTT HUB - cuối script)
 task.spawn(function()
     while task.wait(2) do
         pcall(function()
@@ -506,7 +412,7 @@ task.spawn(function()
     end
 end)
 
--- ==================== AUTO BUSO HAKI ====================
+-- ==================== AUTO BUSO ====================
 task.spawn(function()
     while task.wait(1) do
         pcall(function()
@@ -519,12 +425,10 @@ task.spawn(function()
     end
 end)
 
--- ==================== FAST ATTACK SETUP ====================
-SetupFastAttack()
-
--- ==================== MAIN FARM LOOP (từ NTT HUB) ====================
+-- ==================== 🎯 MAIN FARM LOOP (Đứng im 1 chỗ, mob bring tới) ====================
+local farmStuckPos = nil -- Vị trí đứng farm
 task.spawn(function()
-    task.wait(8) -- Chờ chọn team + load
+    task.wait(8)
     
     while task.wait() do
         pcall(function()
@@ -538,16 +442,16 @@ task.spawn(function()
                 return
             end
             
-            -- Skip nếu còn GUI chọn team
             local pg = LocalPlayer:FindFirstChild("PlayerGui")
             if pg and pg:FindFirstChild("Main (minimal)") then return end
             
             local lv = GetLevel()
             
-            -- Auto travel sea theo level
+            -- Auto travel Sea
             if IsSea1() and lv >= 700 then
                 CommF:InvokeServer("TravelDressrosa")
                 task.wait(5)
+                farmStuckPos = nil
                 return
             end
             
@@ -570,28 +474,43 @@ task.spawn(function()
             local questGui = main and main:FindFirstChild("Quest")
             
             if questGui and questGui.Visible == false then
-                -- Chưa nhận quest -> đến NPC nhận
-                TweenTo(npcCF)
+                -- CHƯA CÓ QUEST → đến NPC
+                farmStuckPos = nil
+                SmartTween(npcCF)
                 if Distance(npcCF) <= 10 then
-                    task.wait(1)
-                    Log("Nhận quest: " .. questName .. " Lv " .. questLevel)
+                    task.wait(0.5)
                     CommF:InvokeServer("StartQuest", questName, questLevel)
+                    task.wait(0.5)
                 end
             else
-                -- Đã có quest -> farm mob
-                local mob = FindMob(mobName)
-                if mob then
-                    EquipMelee()
-                    TweenTo(mob.HumanoidRootPart.CFrame * CFrame.new(0, _G.distance, 0))
-                    -- Bug mob về gần player
-                    BugMob(mobName)
-                else
-                    TweenTo(mobAreaCF)
+                -- ĐÃ CÓ QUEST → đứng 1 chỗ, bring mob tới
+                
+                -- Chọn vị trí đứng farm (giữa area mob)
+                if not farmStuckPos then
+                    farmStuckPos = mobAreaCF + Vector3.new(0, 30, 0)
                 end
                 
-                -- Check nếu quest hiện tại không đúng thì reset
-                if questGui and questGui.Container and questGui.Container.QuestTitle and questGui.Container.QuestTitle.Title then
-                    if not string.find(questGui.Container.QuestTitle.Title.Text, mobName) then
+                -- Nếu chưa đến vị trí farm thì di chuyển đến
+                if Distance(farmStuckPos) > 15 then
+                    SmartTween(CFrame.new(farmStuckPos.Position or farmStuckPos))
+                    return
+                end
+                
+                -- Ở vị trí farm - giữ nguyên vị trí
+                root.CFrame = CFrame.new(farmStuckPos.Position or farmStuckPos)
+                root.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+                
+                -- Equip melee
+                EquipMelee()
+                
+                -- 🔥 BRING ALL MOB VỀ ĐÂY (dòng quan trọng!)
+                BringAllMobs(mobName)
+                
+                -- Kiểm tra quest sai
+                if questGui.Container and questGui.Container:FindFirstChild("QuestTitle") 
+                   and questGui.Container.QuestTitle:FindFirstChild("Title") then
+                    local title = questGui.Container.QuestTitle.Title.Text
+                    if not string.find(title, mobName) then
                         questGui.Visible = false
                     end
                 end
@@ -600,54 +519,63 @@ task.spawn(function()
     end
 end)
 
--- ==================== BUG MOB LOOP (song song main farm) ====================
+-- ==================== BRING MOB LOOP RIÊNG (chạy song song, tần suất cao) ====================
+RunService.Heartbeat:Connect(function()
+    if not getgenv().KaitunSettings.AutoLevel then return end
+    if not getgenv().KaitunSettings.BringMob then return end
+    
+    local pg = LocalPlayer:FindFirstChild("PlayerGui")
+    local main = pg and pg:FindFirstChild("Main")
+    local questGui = main and main:FindFirstChild("Quest")
+    
+    if questGui and questGui.Visible and farmStuckPos then
+        local quest = GetQuest()
+        if quest then
+            BringAllMobs(quest[1])
+        end
+    end
+end)
+
+-- ==================== RESET FARM POS KHI CHUYỂN QUEST ====================
 task.spawn(function()
-    while task.wait(1) do
-        pcall(function()
-            if not getgenv().KaitunSettings.AutoLevel then return end
-            local pg = LocalPlayer:FindFirstChild("PlayerGui")
-            local main = pg and pg:FindFirstChild("Main")
-            local questGui = main and main:FindFirstChild("Quest")
-            if questGui and questGui.Visible then
-                local quest = GetQuest()
-                if quest then
-                    BugMob(quest[1])
-                end
+    local lastLv = GetLevel()
+    while task.wait(2) do
+        local cur = GetLevel()
+        if cur ~= lastLv then
+            local oldQ = nil
+            pcall(function()
+                if IsSea1() then oldQ = "sea1" 
+                elseif IsSea2() then oldQ = "sea2" 
+                elseif IsSea3() then oldQ = "sea3" end
+            end)
+            -- Reset khi level tăng đáng kể (chuyển area)
+            local diff = cur - lastLv
+            if diff > 5 or diff < 0 then
+                farmStuckPos = nil
             end
-        end)
+            lastLv = cur
+            print("[Kaitun] ⬆️ Level: " .. cur)
+        end
     end
 end)
 
 -- ==================== AUTO REJOIN ====================
-game:GetService("CoreGui").RobloxPromptGui.promptOverlay.ChildAdded:Connect(function(child)
-    if child.Name == "ErrorPrompt" then
-        pcall(function()
-            ReplicatedStorage.__ServerBrowser:InvokeServer("teleport", game.JobId)
-        end)
-    end
-end)
-
--- ==================== LOG ====================
-task.spawn(function()
-    local lastLv = GetLevel()
-    while task.wait(10) do
-        pcall(function()
-            local cur = GetLevel()
-            if cur ~= lastLv then
-                Log("⬆️ Level: " .. cur .. " (+" .. (cur - lastLv) .. ")")
-                lastLv = cur
-            end
-        end)
-    end
+pcall(function()
+    game:GetService("CoreGui").RobloxPromptGui.promptOverlay.ChildAdded:Connect(function(child)
+        if child.Name == "ErrorPrompt" then
+            pcall(function()
+                ReplicatedStorage.__ServerBrowser:InvokeServer("teleport", game.JobId)
+            end)
+        end
+    end)
 end)
 
 print([[
 ╔══════════════════════════════════════════════════════╗
-║  🎯 KAITUN BLOX FRUITS v5 FINAL - Based on NTT HUB  ║
-║  ✅ Auto Team | Auto Farm | Fast Attack | Bug Mob   ║
-║  ✅ Full Sea 1/2/3 - Level 1 to Max                 ║
+║  🎯 KAITUN v6 - BRING ALL MOB + SMOOTH FARM        ║
+║  ✅ Đứng 1 chỗ, mob tự bay tới                     ║
+║  ✅ Fast attack all mob cùng lúc                    ║
+║  ✅ Không giật, không lag "over 50k y axis"        ║
 ╚══════════════════════════════════════════════════════╝
 ]])
-Log("Level: " .. GetLevel() .. " | Sea: " .. (IsSea1() and "1" or IsSea2() and "2" or IsSea3() and "3" or "?"))
-Log("Team: " .. getgenv().KaitunSettings.Team .. " | Stats: " .. getgenv().KaitunSettings.StatsType)
-Log("Đang khởi động auto farm...")
+print("[Kaitun] Level: " .. GetLevel() .. " | Team: " .. getgenv().KaitunSettings.Team)
