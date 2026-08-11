@@ -179,6 +179,7 @@ local function BringAllMobs(mobName)
                     hrp.CanCollide = false
                     pcall(function()
                         hrp.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+                        hrp.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
                     end)
                 end
             end
@@ -231,8 +232,8 @@ local function FastAttackAll()
         
         -- ============ CÁCH 1: NTT HUB Original Format ============
         local args = {
-            [1] = nil,           -- Head của mob đầu tiên
-            [2] = {},            -- Array chứa {mob, hrp}
+            [1] = nil,            -- Head của mob đầu tiên
+            [2] = {},             -- Array chứa {mob, hrp}
             [4] = "078da341",    -- Magic string từ NTT HUB
         }
         
@@ -658,10 +659,10 @@ end)
 
 print([[
 ╔══════════════════════════════════════════════════════╗
-║  🎯 KAITUN v7 - FIX FAST ATTACK                     ║
-║  ✅ 4 loops attack song song                        ║
-║  ✅ Args format đúng NTT HUB                        ║
-║  ✅ Bring all + Attack all                          ║
+║  🎯 KAITUN v7 - FIX FAST ATTACK                      ║
+║  ✅ 4 loops attack song song                         ║
+║  ✅ Args format đúng NTT HUB                         ║
+║  ✅ Bring all + Attack all                           ║
 ╚══════════════════════════════════════════════════════╝
 ]])
 print("[Kaitun] Level: " .. GetLevel() .. " | Team: " .. getgenv().KaitunSettings.Team)
