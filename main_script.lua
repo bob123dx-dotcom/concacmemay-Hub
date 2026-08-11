@@ -1,6 +1,5 @@
 -- =====================================================================
--- KAITUN BLOX FRUITS v3 - FIX AUTO TEAM 100%
--- Tổng hợp từ: Redz, Rip, Snow, Frost, Wave, Hoho Hub
+-- KAITUN BLOX FRUITS v4 - FIX LỖI NIL + AUTO TEAM
 -- =====================================================================
 
 if not game:IsLoaded() then game.Loaded:Wait() end
@@ -14,11 +13,10 @@ local Workspace = game:GetService("Workspace")
 local VirtualUser = game:GetService("VirtualUser")
 local VirtualInputManager = game:GetService("VirtualInputManager")
 local TeleportService = game:GetService("TeleportService")
-local UserInputService = game:GetService("UserInputService")
 
 -- ==================== CẤU HÌNH ====================
 getgenv().KaitunSettings = getgenv().KaitunSettings or {
-    Team = "Pirates",  -- "Pirates" hoặc "Marines"
+    Team = "Pirates",
     AutoLevel = true,
     AutoStats = true,
     StatsType = "Melee",
@@ -29,51 +27,93 @@ getgenv().KaitunSettings = getgenv().KaitunSettings or {
 
 -- ==================== ANTI-AFK ====================
 LocalPlayer.Idled:Connect(function()
-    VirtualUser:CaptureController()
-    VirtualUser:ClickButton2(Vector2.new())
+    pcall(function()
+        VirtualUser:CaptureController()
+        VirtualUser:ClickButton2(Vector2.new())
+    end)
 end)
 
 -- ==================== BIẾN ====================
 local Running = true
 local CommF = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("CommF_")
 
+-- ==================== HÀM AN TOÀN LẤY GUI ====================
+local function SafeGetChooseTeam()
+    local pg = LocalPlayer:FindFirstChild("PlayerGui")
+    if not pg then return nil end
+    
+    -- Duyệt tất cả ScreenGui để tìm ChooseTeam
+    for _, gui in pairs(pg:GetChildren()) do
+        -- Kiểm tra trực tiếp trong ScreenGui
+        local ct = gui:FindFirstChild("ChooseTeam")
+        if ct then return ct end
+        
+        -- Kiểm tra "Main" ScreenGui
+        if gui.Name == "Main" then
+            local ct2 = gui:FindFirstChild("ChooseTeam")
+            if ct2 then return ct2 end
+        end
+    end
+    
+    -- Tìm sâu hơn
+    for _, desc in pairs(pg:GetDescendants()) do
+        if desc.Name == "ChooseTeam" then
+            return desc
+        end
+    end
+    
+    return nil
+end
+
 -- ==================== TIỆN ÍCH ====================
 local function GetChar() return LocalPlayer.Character end
-local function GetRoot() local c=GetChar(); return c and c:FindFirstChild("HumanoidRootPart") end
-local function GetHum() local c=GetChar(); return c and c:FindFirstChild("Humanoid") end
+local function GetRoot() 
+    local c = GetChar()
+    if not c then return nil end
+    return c:FindFirstChild("HumanoidRootPart")
+end
+local function GetHum() 
+    local c = GetChar()
+    if not c then return nil end
+    return c:FindFirstChild("Humanoid")
+end
 local function GetLevel() 
     local ok, v = pcall(function() return LocalPlayer.Data.Level.Value end)
     return ok and v or 1
 end
 
+-- Kiểm tra đã chọn team chưa (AN TOÀN)
+local function IsTeamChosen()
+    local ct = SafeGetChooseTeam()
+    if not ct then return true end -- Không có GUI = đã chọn rồi
+    
+    local ok, visible = pcall(function() return ct.Visible end)
+    if not ok then return true end
+    
+    return not visible
+end
+
 -- =====================================================================
--- ==================== 🎯 AUTO CHỌN TEAM (FIX 100%) ====================
+-- ==================== 🎯 AUTO CHỌN TEAM (FIX NIL) ==================== 
 -- =====================================================================
 
--- Hàm tìm và click button team theo cách CHÍNH XÁC của Blox Fruits
 local function FireClickTeam(team)
     local success = false
+    local chooseTeam = SafeGetChooseTeam()
     
-    -- ============ PHƯƠNG PHÁP 1: PATH CHÍNH XÁC (Blox Fruits chuẩn) ============
-    -- Path chuẩn: PlayerGui.Main.ChooseTeam.Container.Buttons.[Pirates/Marines].Frame.ImageButton
+    if not chooseTeam then
+        return true -- Không có GUI = xong
+    end
+    
+    -- ============ P1: PATH CHUẨN ============
     pcall(function()
-        local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
-        if not playerGui then return end
-        
-        local main = playerGui:FindFirstChild("Main")
-        if not main then return end
-        
-        local chooseTeam = main:FindFirstChild("ChooseTeam")
-        if not chooseTeam then return end
-        
         local container = chooseTeam:FindFirstChild("Container")
         if not container then return end
         
         local buttons = container:FindFirstChild("Buttons")
         if not buttons then return end
         
-        -- Blox Fruits format
-        local teamFrame = buttons:FindFirstChild(team) -- "Pirates" hoặc "Marines"
+        local teamFrame = buttons:FindFirstChild(team)
         if not teamFrame then return end
         
         local frame = teamFrame:FindFirstChild("Frame")
@@ -82,39 +122,27 @@ local function FireClickTeam(team)
         local imageButton = frame:FindFirstChild("ImageButton")
         if not imageButton then return end
         
-        -- Fire tất cả các signal
         pcall(function() firesignal(imageButton.MouseButton1Click) end)
         pcall(function() firesignal(imageButton.MouseButton1Down) end)
         pcall(function() firesignal(imageButton.MouseButton1Up) end)
         pcall(function() firesignal(imageButton.Activated) end)
-        pcall(function() firesignal(imageButton.InputBegan) end)
-        pcall(function() firesignal(imageButton.InputEnded) end)
         
         print("[Kaitun] ✅ [P1] Fire signal path chuẩn: " .. team)
         success = true
     end)
     
-    task.wait(0.5)
-    if not (LocalPlayer.PlayerGui:FindFirstChild("Main") and LocalPlayer.PlayerGui.Main:FindFirstChild("ChooseTeam") and LocalPlayer.PlayerGui.Main.ChooseTeam.Visible) then
-        return true
-    end
+    task.wait(0.3)
+    if IsTeamChosen() then return true end
     
-    -- ============ PHƯƠNG PHÁP 2: DUYỆT TẤT CẢ ImageButton ============
+    -- ============ P2: DUYỆT TẤT CẢ BUTTON ============
     pcall(function()
-        local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
-        if not playerGui then return end
-        local main = playerGui:FindFirstChild("Main")
-        if not main then return end
-        local chooseTeam = main:FindFirstChild("ChooseTeam")
-        if not chooseTeam then return end
-        
         for _, desc in pairs(chooseTeam:GetDescendants()) do
             if desc:IsA("ImageButton") or desc:IsA("TextButton") then
-                -- Kiểm tra ancestor có chứa tên team
                 local ancestor = desc
                 local isTeam = false
-                for i = 1, 5 do
-                    if ancestor and ancestor.Name == team then
+                for i = 1, 6 do
+                    if not ancestor then break end
+                    if ancestor.Name == team then
                         isTeam = true
                         break
                     end
@@ -125,94 +153,94 @@ local function FireClickTeam(team)
                     pcall(function() firesignal(desc.MouseButton1Click) end)
                     pcall(function() firesignal(desc.MouseButton1Down) end)
                     pcall(function() firesignal(desc.Activated) end)
-                    print("[Kaitun] ✅ [P2] Fire button: " .. desc:GetFullName())
+                    print("[Kaitun] ✅ [P2] Fire button: " .. desc.Name)
                     success = true
                 end
             end
         end
     end)
     
-    task.wait(0.5)
-    if not (LocalPlayer.PlayerGui:FindFirstChild("Main") and LocalPlayer.PlayerGui.Main:FindFirstChild("ChooseTeam") and LocalPlayer.PlayerGui.Main.ChooseTeam.Visible) then
-        return true
-    end
+    task.wait(0.3)
+    if IsTeamChosen() then return true end
     
-    -- ============ PHƯƠNG PHÁP 3: SET TEAM DIRECTLY VÀO PLAYER ============
+    -- ============ P3: SET TEAM DIRECTLY ============
     pcall(function()
-        -- Một số executor cho phép set Team property trực tiếp
         for _, teamObj in pairs(game.Teams:GetChildren()) do
             if teamObj.Name == team then
                 LocalPlayer.Team = teamObj
                 LocalPlayer.TeamColor = teamObj.TeamColor
                 print("[Kaitun] ✅ [P3] Set Team property: " .. team)
+                success = true
             end
         end
     end)
     
-    -- ============ PHƯƠNG PHÁP 4: VIRTUAL INPUT MANAGER (Click thật) ============
+    task.wait(0.3)
+    if IsTeamChosen() then return true end
+    
+    -- ============ P4: VIRTUAL INPUT CLICK ============
     pcall(function()
-        local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
-        if not playerGui then return end
-        local main = playerGui:FindFirstChild("Main")
-        if not main then return end
-        local chooseTeam = main:FindFirstChild("ChooseTeam")
-        if not chooseTeam or not chooseTeam.Visible then return end
+        local ct = SafeGetChooseTeam()
+        if not ct or not ct.Visible then return end
         
-        -- Tìm button trong path chuẩn
-        local container = chooseTeam:FindFirstChild("Container")
-        if not container then return end
-        local buttons = container:FindFirstChild("Buttons")
-        if not buttons then return end
-        local teamFrame = buttons:FindFirstChild(team)
-        if not teamFrame then return end
-        
-        -- Lấy vị trí center của teamFrame
-        local pos = teamFrame.AbsolutePosition
-        local size = teamFrame.AbsoluteSize
-        local clickX = pos.X + size.X / 2
-        local clickY = pos.Y + size.Y / 2
-        
-        -- Simulate real mouse click
-        VirtualInputManager:SendMouseButtonEvent(clickX, clickY, 0, true, game, 0)
-        task.wait(0.1)
-        VirtualInputManager:SendMouseButtonEvent(clickX, clickY, 0, false, game, 0)
-        
-        print("[Kaitun] ✅ [P4] VirtualInput click tại (" .. clickX .. ", " .. clickY .. ")")
-        success = true
+        -- Tìm bất kỳ button nào có tên team
+        for _, desc in pairs(ct:GetDescendants()) do
+            local ancestor = desc
+            local isTeam = false
+            for i = 1, 6 do
+                if not ancestor then break end
+                if ancestor.Name == team then
+                    isTeam = true
+                    break
+                end
+                ancestor = ancestor.Parent
+            end
+            
+            if isTeam and (desc:IsA("ImageButton") or desc:IsA("TextButton") or desc:IsA("Frame")) then
+                local pos = desc.AbsolutePosition
+                local size = desc.AbsoluteSize
+                if size.X > 0 and size.Y > 0 then
+                    local clickX = pos.X + size.X / 2
+                    local clickY = pos.Y + size.Y / 2
+                    
+                    VirtualInputManager:SendMouseButtonEvent(clickX, clickY, 0, true, game, 0)
+                    task.wait(0.1)
+                    VirtualInputManager:SendMouseButtonEvent(clickX, clickY, 0, false, game, 0)
+                    print("[Kaitun] ✅ [P4] VirtualClick (" .. clickX .. ", " .. clickY .. ")")
+                    success = true
+                    break
+                end
+            end
+        end
     end)
     
     return success
 end
 
--- Kiểm tra đã chọn team chưa
-local function IsTeamChosen()
-    local gui = LocalPlayer.PlayerGui:FindFirstChild("Main")
-    if not gui then return false end
-    local ct = gui:FindFirstChild("ChooseTeam")
-    if not ct then return true end
-    return not ct.Visible
-end
-
--- Auto chọn team (chạy 1 task riêng)
+-- Auto chọn team task
 task.spawn(function()
-    -- Chờ GUI load
-    task.wait(2)
+    task.wait(3)
     
-    local playerGui = LocalPlayer:WaitForChild("PlayerGui", 10)
-    local main = playerGui:WaitForChild("Main", 10)
+    -- Wait PlayerGui
+    local pg = LocalPlayer:WaitForChild("PlayerGui", 15)
+    if not pg then
+        warn("[Kaitun] Không tìm thấy PlayerGui!")
+        return
+    end
     
-    -- Chờ GUI ChooseTeam xuất hiện
+    -- Chờ GUI ChooseTeam xuất hiện (tối đa 20s)
     local waitStart = tick()
-    while tick() - waitStart < 15 do
-        if main:FindFirstChild("ChooseTeam") and main.ChooseTeam.Visible then
-            break
+    while tick() - waitStart < 20 do
+        local ct = SafeGetChooseTeam()
+        if ct then
+            local ok, vis = pcall(function() return ct.Visible end)
+            if ok and vis then break end
         end
         task.wait(0.5)
     end
     
-    -- Nếu không cần chọn team thì thoát
-    if not (main:FindFirstChild("ChooseTeam") and main.ChooseTeam.Visible) then
-        print("[Kaitun] ℹ️ Không cần chọn team (đã chọn hoặc GUI không xuất hiện)")
+    if IsTeamChosen() then
+        print("[Kaitun] ℹ️ Đã chọn team hoặc không cần chọn")
         return
     end
     
@@ -226,22 +254,19 @@ task.spawn(function()
     
     print("[Kaitun] 🎯 Đang chọn team: " .. team)
     
-    -- Loop cho đến khi chọn được team
     local attempts = 0
-    while attempts < 30 and not IsTeamChosen() do
+    while attempts < 30 and Running do
+        if IsTeamChosen() then break end
         attempts = attempts + 1
         print("[Kaitun] Lần thử #" .. attempts)
-        
         FireClickTeam(team)
-        task.wait(1)
+        task.wait(1.5)
     end
     
     if IsTeamChosen() then
         print("[Kaitun] ✅✅✅ CHỌN TEAM " .. team .. " THÀNH CÔNG!")
     else
-        warn("[Kaitun] ❌ Không thể chọn team sau 30 lần thử!")
-        warn("[Kaitun] Chạy script debug bên dưới để lấy thông tin GUI:")
-        warn("[Kaitun] for _,v in pairs(game.Players.LocalPlayer.PlayerGui.Main.ChooseTeam:GetDescendants()) do print(v.ClassName, v:GetFullName()) end")
+        warn("[Kaitun] ❌ Không chọn được team!")
     end
 end)
 
@@ -249,7 +274,6 @@ end)
 -- ==================== BẢNG QUEST ====================
 -- =====================================================================
 local Quests = {
-    -- SEA 1
     {1,   9,   "BanditQuest1",   1, "Bandit",           CFrame.new(1060.9, 16.4, 1547.7),   CFrame.new(1073, 17, 1442)},
     {10,  14,  "BanditQuest1",   2, "Monkey",           CFrame.new(1060.9, 16.4, 1547.7),   CFrame.new(-1447, 55, 20)},
     {15,  29,  "JungleQuest",    1, "Monkey",           CFrame.new(-1601.6, 36.7, 152.7),   CFrame.new(-1447, 55, 20)},
@@ -283,7 +307,6 @@ local function GetQuestForLevel(lv)
     return Quests[#Quests]
 end
 
--- ==================== SEA ====================
 local function GetCurrentSea()
     local pid = game.PlaceId
     if pid == 2753915549 then return 1 end
@@ -294,17 +317,20 @@ end
 
 -- ==================== NO-CLIP ====================
 RunService.Stepped:Connect(function()
-    local char = GetChar()
-    if char then
-        for _, p in pairs(char:GetDescendants()) do
-            if p:IsA("BasePart") then p.CanCollide = false end
+    pcall(function()
+        local char = GetChar()
+        if char then
+            for _, p in pairs(char:GetDescendants()) do
+                if p:IsA("BasePart") then p.CanCollide = false end
+            end
         end
-    end
+    end)
 end)
 
 -- ==================== TÌM MOB ====================
 local function FindMob(mobName)
-    local root = GetRoot(); if not root then return nil end
+    local root = GetRoot()
+    if not root then return nil end
     local nearest, nearDist = nil, math.huge
     local enemies = Workspace:FindFirstChild("Enemies")
     if enemies then
@@ -324,20 +350,25 @@ end
 
 -- ==================== TRANG BỊ MELEE ====================
 local function EquipMelee()
-    local char = GetChar(); if not char then return end
-    local hum = char:FindFirstChildOfClass("Humanoid"); if not hum then return end
+    local char = GetChar()
+    if not char then return end
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    if not hum then return end
     
     for _, t in pairs(char:GetChildren()) do
         if t:IsA("Tool") then return end
     end
     
+    local backpack = LocalPlayer:FindFirstChild("Backpack")
+    if not backpack then return end
+    
     local meleeList = {"Godhuman","Dragon Talon","Electric Claw","Sharkman Karate","Death Step","Superhuman","Dragon Breath","Electric","Water Kung Fu","Dark Step","Black Leg","Combat"}
     for _, name in ipairs(meleeList) do
-        local tool = LocalPlayer.Backpack:FindFirstChild(name)
+        local tool = backpack:FindFirstChild(name)
         if tool then hum:EquipTool(tool); return end
     end
     
-    for _, t in pairs(LocalPlayer.Backpack:GetChildren()) do
+    for _, t in pairs(backpack:GetChildren()) do
         if t:IsA("Tool") then hum:EquipTool(t); return end
     end
 end
@@ -345,7 +376,12 @@ end
 -- ==================== FAST ATTACK ====================
 local function FastAttackSetup()
     pcall(function()
-        local CF = require(LocalPlayer.PlayerScripts.CombatFramework)
+        local ps = LocalPlayer:FindFirstChild("PlayerScripts")
+        if not ps then return end
+        local cfMod = ps:FindFirstChild("CombatFramework")
+        if not cfMod then return end
+        
+        local CF = require(cfMod)
         local rc = debug.getupvalue(CF.setEquipped, 2)
         if not rc then return end
         rc.timeToNextAttack = 0
@@ -356,8 +392,8 @@ local function FastAttackSetup()
 end
 
 local function AttackClick()
-    local mouse = LocalPlayer:GetMouse()
     pcall(function()
+        local mouse = LocalPlayer:GetMouse()
         mouse.Button1Down:Fire()
         task.wait()
         mouse.Button1Up:Fire()
@@ -388,7 +424,8 @@ task.spawn(function()
     while Running do
         task.wait(5)
         pcall(function()
-            local char = GetChar(); if not char then return end
+            local char = GetChar()
+            if not char then return end
             if getgenv().KaitunSettings.AutoBusoHaki and not char:FindFirstChild("HasBuso") then
                 CommF:InvokeServer("Buso")
             end
@@ -409,7 +446,7 @@ end)
 
 -- ==================== MAIN FARM ====================
 task.spawn(function()
-    task.wait(8) -- Chờ chọn team + load
+    task.wait(10) -- Chờ chọn team + load
     
     while Running do
         task.wait(0.2)
@@ -424,12 +461,8 @@ task.spawn(function()
                 return
             end
             
-            -- Skip nếu vẫn còn GUI chọn team
-            local gui = LocalPlayer.PlayerGui:FindFirstChild("Main")
-            if gui then
-                local ct = gui:FindFirstChild("ChooseTeam")
-                if ct and ct.Visible then return end
-            end
+            -- Skip nếu còn GUI chọn team
+            if not IsTeamChosen() then return end
             
             local lv = GetLevel()
             local q = GetQuestForLevel(lv)
@@ -441,10 +474,14 @@ task.spawn(function()
             local npcCF = q[6]
             local mobAreaCF = q[7]
             
-            -- Kiểm tra quest
+            -- Kiểm tra quest (AN TOÀN)
             local hasQuest = false
             pcall(function()
-                local questGui = gui and gui:FindFirstChild("Quest")
+                local pg = LocalPlayer:FindFirstChild("PlayerGui")
+                if not pg then return end
+                local mainGui = pg:FindFirstChild("Main")
+                if not mainGui then return end
+                local questGui = mainGui:FindFirstChild("Quest")
                 if questGui and questGui.Visible then
                     hasQuest = true
                 end
@@ -487,7 +524,7 @@ task.spawn(function()
                     mobPos
                 )
                 root.Velocity = Vector3.new(0, 0, 0)
-                root.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+                pcall(function() root.AssemblyLinearVelocity = Vector3.new(0, 0, 0) end)
                 
                 EquipMelee()
                 AttackClick()
@@ -504,18 +541,20 @@ task.spawn(function()
     local lastLv = GetLevel()
     while Running do
         task.wait(15)
-        local cur = GetLevel()
-        if cur ~= lastLv then
-            print("[Kaitun] ⬆️ Level: " .. cur)
-            lastLv = cur
-        end
+        pcall(function()
+            local cur = GetLevel()
+            if cur ~= lastLv then
+                print("[Kaitun] ⬆️ Level: " .. cur)
+                lastLv = cur
+            end
+        end)
     end
 end)
 
 print([[
 ╔══════════════════════════════════════════════════════╗
-║     KAITUN BLOX FRUITS v3 - AUTO TEAM FIX          ║
-║     Tổng hợp từ 6 Hub uy tín                        ║
+║     KAITUN BLOX FRUITS v4 - FIX LỖI NIL             ║
+║     Auto Team + Auto Farm + Fast Attack             ║
 ╚══════════════════════════════════════════════════════╝
 ]])
 print("[Kaitun] Level: " .. GetLevel() .. " | Sea: " .. GetCurrentSea() .. " | Team: " .. getgenv().KaitunSettings.Team)
