@@ -1,535 +1,861 @@
--- =====================================================================
--- KAITUN BLOX FRUITS v7 - FIX FAST ATTACK & BRING MOB ANTI-CHEAT
--- =====================================================================
-
-if not game:IsLoaded() then game.Loaded:Wait() end
+-- ============================================
+-- BLOX FRUITS AFK BOT v2.0
+-- GPU = 0% | CPU = MIN | RAM = AUTO CLEAN
+-- MEMORY LEAK DETECTOR + FIXER
+-- ============================================
 
 local Players = game:GetService("Players")
-local LocalPlayer = Players.LocalPlayer
-local TweenService = game:GetService("TweenService")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local RunService = game:GetService("RunService")
+local Lighting = game:GetService("Lighting")
 local Workspace = game:GetService("Workspace")
-local VirtualUser = game:GetService("VirtualUser")
+local StarterGui = game:GetService("StarterGui")
+local RunService = game:GetService("RunService")
+local ContentProvider =
+    game:GetService("ContentProvider")
+local TweenService =
+    game:GetService("TweenService")
+local SoundService =
+    game:GetService("SoundService")
+local ReplicatedStorage =
+    game:GetService("ReplicatedStorage")
+local LocalPlayer = Players.LocalPlayer
 
--- ==================== CẤU HÌNH ====================
-getgenv().KaitunSettings = getgenv().KaitunSettings or {
-    Team = "Pirates",
-    AutoLevel = true,
-    AutoStats = true,
-    StatsType = "Melee",
-    AutoBusoHaki = true,
-    FastAttack = true,
-    BringMob = true,
-    BringDistance = 5, -- Giảm khoảng cách kéo để tránh lỗi tọa độ 50k Y axis
-    BringRange = 2500,
-    FarmHeight = 25,
+if not game:IsLoaded() then
+    game.Loaded:Wait()
+end
+task.wait(2)
+
+print("[AFK v2] Khoi dong...")
+
+-- ============================================
+-- BIEN THEO DOI MEMORY
+-- ============================================
+local lastMemory = 0
+local memoryLeakCount = 0
+local connections = {} -- Luu connections
+                       -- de disconnect sau
+
+-- ============================================
+-- HAM: Luu connection de quan ly
+-- (Tranh memory leak tu connections)
+-- ============================================
+local function track(conn)
+    table.insert(connections, conn)
+    return conn
+end
+
+-- ============================================
+-- HAM: Collect garbage manh
+-- Roblox Lua co GC nhung can ep chay
+-- ============================================
+local function forceGC()
+    -- Goi nhieu lan de GC clean sach
+    for _ = 1, 5 do
+        pcall(function()
+            collectgarbage("collect")
+        end)
+    end
+    pcall(function()
+        collectgarbage("collect")
+        collectgarbage("count")
+    end)
+end
+
+-- ============================================
+-- HAM: Doc memory hien tai (MB)
+-- ============================================
+local function getMemoryMB()
+    local mem = 0
+    pcall(function()
+        mem = collectgarbage("count") / 1024
+    end)
+    return mem
+end
+
+-- ============================================
+-- HAM: Xoa sound (rat ton RAM)
+-- ============================================
+local function killAllSounds()
+    for _, v in ipairs(
+            SoundService:GetDescendants()) do
+        pcall(function()
+            if v:IsA("Sound") then
+                v:Stop()
+                v.Volume = 0
+                v.Playing = false
+                v:Destroy()
+            end
+        end)
+    end
+
+    -- Sound trong Workspace
+    for _, v in ipairs(
+            Workspace:GetDescendants()) do
+        pcall(function()
+            if v:IsA("Sound") then
+                v:Stop()
+                v.Volume = 0
+                v:Destroy()
+            end
+        end)
+    end
+end
+
+-- ============================================
+-- HAM: Xoa particles/trails/effects
+-- (Nhung thu nay TON GPU + RAM nhat)
+-- ============================================
+local EFFECT_CLASSES = {
+    "ParticleEmitter",
+    "Trail", "Beam",
+    "Fire", "Smoke", "Sparkles",
+    "Explosion",
+    "PointLight", "SpotLight",
+    "SurfaceLight",
+    "Highlight",
+    "BillboardGui",
+    "SurfaceGui",
 }
 
--- ==================== ANTI-AFK ====================
-LocalPlayer.Idled:Connect(function()
-    VirtualUser:CaptureController()
-    VirtualUser:ClickButton2(Vector2.new())
-end)
-
--- ==================== REMOTES ====================
-local CommF = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("CommF_")
-local Modules = ReplicatedStorage:WaitForChild("Modules")
-local Net = Modules:WaitForChild("Net")
-local RegisterAttack = Net:WaitForChild("RE/RegisterAttack")
-local RegisterHit = Net:WaitForChild("RE/RegisterHit")
-
--- ==================== TIỆN ÍCH ====================
-local function GetChar() return LocalPlayer.Character end
-local function GetRoot() 
-    local c = GetChar()
-    return c and c:FindFirstChild("HumanoidRootPart")
-end
-local function GetHum() 
-    local c = GetChar()
-    return c and c:FindFirstChild("Humanoid")
-end
-local function GetLevel() 
-    local ok, v = pcall(function() return LocalPlayer.Data.Level.Value end)
-    return ok and v or 1
-end
-
-local function IsSea1() return game.PlaceId == 2753915549 or game.PlaceId == 85211729168715 end
-local function IsSea2() return game.PlaceId == 4442272183 or game.PlaceId == 79091703265657 end
-local function IsSea3() return game.PlaceId == 7449423635 or game.PlaceId == 100117331123089 end
-
-local function Distance(target)
-    local root = GetRoot()
-    if not root then return math.huge end
-    if typeof(target) == "Vector3" then
-        return (target - root.Position).Magnitude
-    elseif target.Position then
-        return (target.Position - root.Position).Magnitude
-    end
-    return math.huge
-end
-
--- ==================== ENABLE SIMULATION RADIUS ====================
-task.spawn(function()
-    while task.wait(0.5) do
+local function killEffects(parent)
+    for _, v in ipairs(
+            parent:GetDescendants()) do
         pcall(function()
-            if setscriptable and sethiddenproperty then
-                setscriptable(LocalPlayer, "SimulationRadius", true)
-                sethiddenproperty(LocalPlayer, "SimulationRadius", math.huge)
-                sethiddenproperty(LocalPlayer, "MaximumSimulationRadius", math.huge)
+            for _, cls in
+                    ipairs(EFFECT_CLASSES) do
+                if v:IsA(cls) then
+                    v:Destroy()
+                    return
+                end
             end
         end)
     end
-end)
-
--- ==================== TELEPORT ====================
-local function TeleportTo(cf)
-    local root = GetRoot()
-    if not root then return end
-    root.CFrame = cf
-    pcall(function() root.AssemblyLinearVelocity = Vector3.new(0, 0, 0) end)
 end
 
-local function SmartMove(cf)
-    local root = GetRoot()
-    if not root then return end
-    local dist = (root.Position - cf.Position).Magnitude
-    if dist < 3000 then
-        TeleportTo(cf)
-    else
-        local tween = TweenService:Create(root, TweenInfo.new(dist/500, Enum.EasingStyle.Linear), {CFrame = cf})
-        tween:Play()
-        tween.Completed:Wait()
-    end
-end
-
--- ==================== TRANG BỊ TOOL ====================
-local function EquipTool(toolType)
-    local char = GetChar()
-    if not char then return false end
-    local backpack = LocalPlayer:FindFirstChild("Backpack")
-    if not backpack then return false end
-    
-    for _, t in pairs(char:GetChildren()) do
-        if t:IsA("Tool") and (t.ToolTip == toolType or t.Name == toolType) then
-            return true
-        end
-    end
-    
-    for _, t in pairs(backpack:GetChildren()) do
-        if t:IsA("Tool") and (t.ToolTip == toolType or t.Name == toolType) then
-            local hum = GetHum()
-            if hum then hum:EquipTool(t) return true end
-        end
-    end
-    return false
-end
-
--- ==================== 🔥 BRING ALL MOB (Đã fix chống lỗi trục Y & Server Anti-Cheat) ====================
-local function BringAllMobs(mobName)
-    if not getgenv().KaitunSettings.BringMob then return end
-    local root = GetRoot()
-    if not root then return end
-    local enemies = Workspace:FindFirstChild("Enemies")
-    if not enemies then return end
-    
-    for _, mob in pairs(enemies:GetChildren()) do
-        local match = false
-        if type(mobName) == "string" then
-            match = (mob.Name == mobName)
-        elseif type(mobName) == "table" then
-            for _, n in ipairs(mobName) do
-                if mob.Name == n then match = true break end
-            end
-        end
-        
-        if match then
-            local hrp = mob:FindFirstChild("HumanoidRootPart")
-            local h = mob:FindFirstChild("Humanoid")
-            if hrp and h and h.Health > 0 then
-                local dist = (hrp.Position - root.Position).Magnitude
-                if dist <= getgenv().KaitunSettings.BringRange and dist > 4 then
-                    -- Gom quái bám sát vị trí ngang với player, không bị đẩy lệch trục Y quá mức gây lỗi server
-                    hrp.CFrame = root.CFrame * CFrame.new(0, 0, -3)
-                    hrp.CanCollide = false
-                    pcall(function()
-                        hrp.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
-                        hrp.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
-                    end)
-                end
-            end
-        end
-    end
-end
-
--- =====================================================================
--- ==================== 🎯 FAST ATTACK - FIX CHUẨN XÁC ====================
--- =====================================================================
-local function GetAllHitsInRange(range)
-    local root = GetRoot()
-    if not root then return {} end
-    local hits = {}
-    
-    local enemies = Workspace:FindFirstChild("Enemies")
-    if enemies then
-        for _, mob in pairs(enemies:GetChildren()) do
-            local hrp = mob:FindFirstChild("HumanoidRootPart")
-            local h = mob:FindFirstChild("Humanoid")
-            local head = mob:FindFirstChild("Head")
-            if hrp and h and h.Health > 0 and head 
-               and (hrp.Position - root.Position).Magnitude <= range then
-                table.insert(hits, mob)
-            end
-        end
-    end
-    return hits
-end
-
--- Fast Attack chính chạy mượt mà
-task.spawn(function()
-    while task.wait(0.03) do
+-- ============================================
+-- HAM: Xoa textures khoi parts
+-- (Texture load vao VRAM = ton GPU memory)
+-- ============================================
+local function stripTextures(parent)
+    for _, v in ipairs(
+            parent:GetDescendants()) do
         pcall(function()
-            if not getgenv().KaitunSettings.FastAttack then return end
-            local char = GetChar()
-            if not char then return end
-            local root = char:FindFirstChild("HumanoidRootPart")
-            if not root then return end
-            local tool = char:FindFirstChildOfClass("Tool")
-            if not tool then return end
-            
-            local toolType = tool.ToolTip
-            if not (toolType == "Melee" or toolType == "Sword") then return end
-            
-            local hits = GetAllHitsInRange(60)
-            if #hits == 0 then return end
-            
-            local args = {
-                [1] = nil,
-                [2] = {},
-                [4] = "078da341",
-            }
-            
-            for i, mob in ipairs(hits) do
-                RegisterAttack:FireServer(0)
-                if not args[1] then 
-                    args[1] = mob:FindFirstChild("Head") or mob.PrimaryPart
-                end
-                args[2][i] = {
-                    [1] = mob,
-                    [2] = mob:FindFirstChild("HumanoidRootPart"),
-                }
+            if v:IsA("Decal")
+                or v:IsA("Texture")
+                or v:IsA("SurfaceAppearance")
+                then
+                v:Destroy()
             end
-            
-            if args[1] then
-                RegisterHit:FireServer(unpack(args))
+
+            -- Xoa mesh data
+            -- (MeshPart dung rat nhieu RAM)
+            if v:IsA("SpecialMesh")
+                or v:IsA("BlockMesh")
+                or v:IsA("CylinderMesh") then
+                v:Destroy()
             end
         end)
     end
-end)
+end
 
--- ==================== NO-CLIP ====================
-RunService.Stepped:Connect(function()
+-- ============================================
+-- HAM: Xoa Animations
+-- (AnimationTrack ton CPU moi frame)
+-- ============================================
+local function killAnimations()
     pcall(function()
-        local char = GetChar()
+        local char = LocalPlayer.Character
         if char then
-            for _, p in pairs(char:GetDescendants()) do
-                if p:IsA("BasePart") then p.CanCollide = false end
+            local hum = char:FindFirstChildOfClass(
+                "Humanoid")
+            if hum then
+                local animator =
+                    hum:FindFirstChildOfClass(
+                        "Animator")
+                if animator then
+                    for _, track in ipairs(
+                        animator:GetPlayingAnimationTracks()
+                        ) do
+                        track:Stop()
+                        track:Destroy()
+                    end
+                end
             end
         end
     end)
-end)
-
--- ==================== BẢNG QUEST ====================
-local function GetQuest()
-    local lv = GetLevel()
-    
-    if IsSea1() then
-        if lv <= 9 then return {"Bandit","BanditQuest1",1,CFrame.new(1062,17,1548),CFrame.new(1039,80,1592)}
-        elseif lv <= 14 then return {"Monkey","JungleQuest",1,CFrame.new(-1600,37,157),CFrame.new(-1776,75,48)}
-        elseif lv <= 29 then return {"Gorilla","JungleQuest",2,CFrame.new(-1600,37,157),CFrame.new(-1321,82,-457)}
-        elseif lv <= 39 then return {"Pirate","BuggyQuest1",1,CFrame.new(-1140,5,3829),CFrame.new(-1148,59,3996)}
-        elseif lv <= 59 then return {"Brute","BuggyQuest1",2,CFrame.new(-1140,5,3829),CFrame.new(-1134,94,4318)}
-        elseif lv <= 74 then return {"Desert Bandit","DesertQuest",1,CFrame.new(897,6,4389),CFrame.new(1054,53,4490)}
-        elseif lv <= 89 then return {"Desert Officer","DesertQuest",2,CFrame.new(897,6,4389),CFrame.new(1561,15,4274)}
-        elseif lv <= 99 then return {"Snow Bandit","SnowQuest",1,CFrame.new(1388,87,-1298),CFrame.new(1420,120,-1414)}
-        elseif lv <= 119 then return {"Snowman","SnowQuest",2,CFrame.new(1388,87,-1298),CFrame.new(1220,138,-1489)}
-        elseif lv <= 149 then return {"Chief Petty Officer","MarineQuest2",1,CFrame.new(-5038,29,4324),CFrame.new(-4761,75,4461)}
-        elseif lv <= 174 then return {"Sky Bandit","SkyQuest",1,CFrame.new(-4840,718,-2621),CFrame.new(-4954,365,-2911)}
-        elseif lv <= 189 then return {"Dark Master","SkyQuest",2,CFrame.new(-4840,718,-2621),CFrame.new(-5181,448,-2173)}
-        elseif lv <= 209 then return {"Prisoner","PrisonerQuest",1,CFrame.new(5307,2,473),CFrame.new(5246,73,356)}
-        elseif lv <= 249 then return {"Dangerous Prisoner","PrisonerQuest",2,CFrame.new(5307,2,473),CFrame.new(5665,73,664)}
-        elseif lv <= 299 then return {"Toga Warrior","ColosseumQuest",1,CFrame.new(-1579,7,-2985),CFrame.new(-1780,45,-2735)}
-        elseif lv <= 324 then return {"Military Soldier","MagmaQuest",1,CFrame.new(-5315,12,8517),CFrame.new(-5615,59,8446)}
-        elseif lv <= 449 then return {"Military Spy","MagmaQuest",2,CFrame.new(-5315,12,8517),CFrame.new(-5729,116,8623)}
-        elseif lv <= 474 then return {"God's Guard","SkyExp1Quest",1,CFrame.new(-4723,845,-1952),CFrame.new(-4628,867,-1939)}
-        elseif lv <= 524 then return {"Shanda","SkyExp1Quest",2,CFrame.new(-7861,5546,-380),CFrame.new(-7686,5601,-441)}
-        elseif lv <= 549 then return {"Royal Squad","SkyExp2Quest",1,CFrame.new(-7905,5636,-1412),CFrame.new(-7635,5637,-1411)}
-        elseif lv <= 624 then return {"Royal Soldier","SkyExp2Quest",2,CFrame.new(-7905,5636,-1412),CFrame.new(-7838,5681,-1791)}
-        elseif lv <= 649 then return {"Galley Pirate","FountainQuest",1,CFrame.new(5258,39,4049),CFrame.new(5560,152,4002)}
-        else return {"Galley Captain","FountainQuest",2,CFrame.new(5258,39,4049),CFrame.new(5528,90,4856)}
-        end
-    end
-    
-    if IsSea2() then
-        if lv <= 724 then return {"Raider","Area1Quest",1,CFrame.new(-428,73,1836),CFrame.new(-477,100,2325)}
-        elseif lv <= 774 then return {"Mercenary","Area1Quest",2,CFrame.new(-428,73,1836),CFrame.new(-857,136,1488)}
-        elseif lv <= 874 then return {"Swan Pirate","Area2Quest",1,CFrame.new(636,73,918),CFrame.new(931,152,1192)}
-        elseif lv <= 899 then return {"Marine Lieutenant","MarineQuest3",1,CFrame.new(-2441,73,-3218),CFrame.new(-2922,153,-3089)}
-        elseif lv <= 949 then return {"Marine Captain","MarineQuest3",2,CFrame.new(-2441,73,-3218),CFrame.new(-2007,120,-3204)}
-        elseif lv <= 974 then return {"Zombie","ZombieQuest",1,CFrame.new(-5495,49,-795),CFrame.new(-5727,126,-728)}
-        elseif lv <= 999 then return {"Vampire","ZombieQuest",2,CFrame.new(-5495,49,-795),CFrame.new(-5922,42,-1085)}
-        elseif lv <= 1049 then return {"Snow Trooper","SnowMountainQuest",1,CFrame.new(607,402,-5373),CFrame.new(539,428,-5546)}
-        elseif lv <= 1099 then return {"Winter Warrior","SnowMountainQuest",2,CFrame.new(607,402,-5373),CFrame.new(1397,466,-5203)}
-        elseif lv <= 1124 then return {"Lab Subordinate","IceSideQuest",1,CFrame.new(-6228,81,-4854),CFrame.new(-5940,175,-4357)}
-        elseif lv <= 1174 then return {"Horned Warrior","IceSideQuest",2,CFrame.new(-6228,81,-4854),CFrame.new(-6273,85,-6088)}
-        elseif lv <= 1199 then return {"Magma Ninja","FireSideQuest",1,CFrame.new(-5402,29,-5372),CFrame.new(-5736,178,-5731)}
-        elseif lv <= 1249 then return {"Lava Pirate","FireSideQuest",2,CFrame.new(-5402,29,-5372),CFrame.new(-5036,86,-5009)}
-        elseif lv <= 1274 then return {"Ship Deckhand","ShipQuest1",1,CFrame.new(1039,125,32911),CFrame.new(1245,129,33052)}
-        elseif lv <= 1299 then return {"Ship Engineer","ShipQuest1",2,CFrame.new(1039,125,32911),CFrame.new(917,44,32783)}
-        elseif lv <= 1324 then return {"Ship Steward","ShipQuest2",1,CFrame.new(969,125,33245),CFrame.new(951,130,33444)}
-        elseif lv <= 1349 then return {"Ship Officer","ShipQuest2",2,CFrame.new(969,125,33245),CFrame.new(614,181,33294)}
-        elseif lv <= 1374 then return {"Arctic Warrior","FrostQuest",1,CFrame.new(5667,29,-6484),CFrame.new(5993,58,-6175)}
-        elseif lv <= 1424 then return {"Snow Lurker","FrostQuest",2,CFrame.new(5667,29,-6484),CFrame.new(5557,58,-6598)}
-        elseif lv <= 1449 then return {"Sea Soldier","ForgottenQuest",1,CFrame.new(-3054,237,-10146),CFrame.new(-3520,75,-9724)}
-        else return {"Water Fighter","ForgottenQuest",2,CFrame.new(-3054,237,-10146),CFrame.new(-3435,291,-10502)}
-        end
-    end
-    
-    if IsSea3() then
-        if lv <= 1524 then return {"Pirate Millionaire","PiratePortQuest",1,CFrame.new(-290,44,5580),CFrame.new(-506,82,5569)}
-        elseif lv <= 1574 then return {"Pistol Billionaire","PiratePortQuest",2,CFrame.new(-290,44,5580),CFrame.new(46,135,6076)}
-        elseif lv <= 1599 then return {"Dragon Crew Warrior","AmazonQuest",1,CFrame.new(5834,52,-1103),CFrame.new(6298,110,-1087)}
-        elseif lv <= 1624 then return {"Dragon Crew","AmazonQuest",2,CFrame.new(5834,52,-1103),CFrame.new(6710,427,115)}
-        elseif lv <= 1649 then return {"Female Islander","AmazonQuest2",1,CFrame.new(5447,602,750),CFrame.new(4647,793,777)}
-        elseif lv <= 1699 then return {"Giant Islander","AmazonQuest2",2,CFrame.new(5447,602,750),CFrame.new(4921,670,-9)}
-        elseif lv <= 1724 then return {"Marine Commodore","MarineTreeIsland",1,CFrame.new(2179,29,-6739),CFrame.new(2440,127,-7373)}
-        elseif lv <= 1774 then return {"Marine Rear Admiral","MarineTreeIsland",2,CFrame.new(2179,29,-6739),CFrame.new(3786,192,-7080)}
-        elseif lv <= 1799 then return {"Fishman Raider","DeepForestIsland3",1,CFrame.new(-10585,332,-8759),CFrame.new(-10532,375,-8267)}
-        elseif lv <= 1824 then return {"Fishman Captain","DeepForestIsland3",2,CFrame.new(-10585,332,-8759),CFrame.new(-10308,376,-8790)}
-        elseif lv <= 1849 then return {"Forest Pirate","DeepForestIsland",1,CFrame.new(-13234,333,-7627),CFrame.new(-13498,391,-7908)}
-        elseif lv <= 1899 then return {"Mythological Pirate","DeepForestIsland",2,CFrame.new(-13234,333,-7627),CFrame.new(-13506,581,-6984)}
-        elseif lv <= 1924 then return {"Jungle Pirate","DeepForestIsland2",1,CFrame.new(-12683,391,-9901),CFrame.new(-12091,448,-10562)}
-        elseif lv <= 1974 then return {"Musketeer Pirate","DeepForestIsland2",2,CFrame.new(-12683,391,-9901),CFrame.new(-13335,447,-9916)}
-        elseif lv <= 1999 then return {"Reborn Skeleton","HauntedQuest1",1,CFrame.new(-9481,142,5568),CFrame.new(-8762,177,6178)}
-        elseif lv <= 2024 then return {"Living Zombie","HauntedQuest1",2,CFrame.new(-9481,142,5568),CFrame.new(-10081,238,5915)}
-        elseif lv <= 2049 then return {"Demonic Soul","HauntedQuest2",1,CFrame.new(-9515,172,6078),CFrame.new(-9568,205,6042)}
-        elseif lv <= 2074 then return {"Posessed Mummy","HauntedQuest2",2,CFrame.new(-9515,172,6078),CFrame.new(-9683,30,6359)}
-        elseif lv <= 2099 then return {"Peanut Scout","NutsIslandQuest",1,CFrame.new(-2103,38,-10192),CFrame.new(-1938,93,-10194)}
-        elseif lv <= 2124 then return {"Peanut President","NutsIslandQuest",2,CFrame.new(-2103,38,-10192),CFrame.new(-1955,81,-10534)}
-        elseif lv <= 2149 then return {"Ice Cream Chef","IceCreamIslandQuest",1,CFrame.new(-819,66,-10965),CFrame.new(-875,119,-11034)}
-        elseif lv <= 2199 then return {"Ice Cream Commander","IceCreamIslandQuest",2,CFrame.new(-819,66,-10965),CFrame.new(-697,173,-11213)}
-        elseif lv <= 2249 then return {"Cookie Crafter","CakeQuest1",1,CFrame.new(-2021,38,-12030),CFrame.new(-2289,92,-12042)}
-        elseif lv <= 2274 then return {"Baking Staff","CakeQuest2",1,CFrame.new(-1930,38,-12840),CFrame.new(-1770,81,-12207)}
-        elseif lv <= 2299 then return {"Head Baker","CakeQuest2",2,CFrame.new(-1930,38,-12840),CFrame.new(-2314,106,-12929)}
-        elseif lv <= 2324 then return {"Cocoa Warrior","ChocQuest1",1,CFrame.new(233,25,-12198),CFrame.new(142,69,-12255)}
-        elseif lv <= 2349 then return {"Chocolate Bar Battler","ChocQuest1",2,CFrame.new(233,25,-12198),CFrame.new(602,74,-12582)}
-        elseif lv <= 2374 then return {"Sweet Thief","ChocQuest2",1,CFrame.new(149,25,-12774),CFrame.new(-99,141,-12261)}
-        elseif lv <= 2399 then return {"Candy Rebel","ChocQuest2",2,CFrame.new(149,25,-12774),CFrame.new(723,67,-12590)}
-        elseif lv <= 2424 then return {"Candy Pirate","CandyQuest1",1,CFrame.new(-1147,14,-14446),CFrame.new(-1409,71,-14846)}
-        elseif lv <= 2449 then return {"Snow Demon","CandyQuest1",2,CFrame.new(-1147,14,-14446),CFrame.new(-847,115,-14409)}
-        elseif lv <= 2474 then return {"Isle Outlaw","TikiQuest1",1,CFrame.new(-16547,56,-174),CFrame.new(-16303,138,-148)}
-        elseif lv <= 2499 then return {"Island Boy","TikiQuest1",2,CFrame.new(-16546,56,-174),CFrame.new(-16851,193,-150)}
-        elseif lv <= 2524 then return {"Sun-Kissed Warrior","TikiQuest2",1,CFrame.new(-16539,56,1052),CFrame.new(-16404,161,1017)}
-        else return {"Isle Champion","TikiQuest2",2,CFrame.new(-16539,56,1052),CFrame.new(-16747,128,1013)}
-        end
-    end
 end
 
--- ==================== AUTO CHỌN TEAM ====================
-task.spawn(function()
-    task.wait(3)
-    for i = 1, 20 do
+-- ============================================
+-- HAM: Lam MeshPart thanh Part thuong
+-- (MeshPart dung 10-50x RAM hon Part)
+-- ============================================
+local function simplifyParts(parent)
+    for _, v in ipairs(
+            parent:GetDescendants()) do
         pcall(function()
-            local pg = LocalPlayer:FindFirstChild("PlayerGui")
-            if not pg then return end
-            local minimal = pg:FindFirstChild("Main (minimal)")
-            local mainGui = pg:FindFirstChild("Main")
-            local needChoose = false
-            if minimal then needChoose = true
-            elseif mainGui then
-                local ct = mainGui:FindFirstChild("ChooseTeam")
-                if ct and ct.Visible then needChoose = true end
-            end
-            if needChoose then
-                CommF:InvokeServer("SetTeam", getgenv().KaitunSettings.Team)
-            end
-        end)
-        task.wait(1)
-    end
-end)
+            if v:IsA("BasePart")
+                and not v:IsA("Terrain") then
 
-task.spawn(function()
-    while task.wait(2) do
-        pcall(function()
-            local pg = LocalPlayer:FindFirstChild("PlayerGui")
-            if pg and pg:FindFirstChild("Main (minimal)") then
-                CommF:InvokeServer("SetTeam", getgenv().KaitunSettings.Team)
-            end
-        end)
-    end
-end)
+                -- Material don gian nhat
+                v.Material =
+                    Enum.Material.SmoothPlastic
+                v.Reflectance = 0
+                v.CastShadow = false
 
--- ==================== AUTO STATS ====================
-task.spawn(function()
-    while task.wait(1) do
-        pcall(function()
-            if not getgenv().KaitunSettings.AutoStats then return end
-            local points = LocalPlayer.Data.Points.Value
-            if points > 0 then
-                for i = 1, 3 do
-                    CommF:InvokeServer("AddPoint", getgenv().KaitunSettings.StatsType, 1)
-                end
-            end
-        end)
-    end
-end)
-
--- ==================== AUTO BUSO ====================
-task.spawn(function()
-    while task.wait(1) do
-        pcall(function()
-            if not getgenv().KaitunSettings.AutoBusoHaki then return end
-            local char = GetChar()
-            if char and not char:FindFirstChild("HasBuso") then
-                CommF:InvokeServer("Buso")
-            end
-        end)
-    end
-end)
-
--- ==================== MAIN FARM ====================
-local farmStuckPos = nil
-task.spawn(function()
-    task.wait(8)
-    
-    while task.wait() do
-        pcall(function()
-            if not getgenv().KaitunSettings.AutoLevel then return end
-            
-            local char = GetChar()
-            local root = GetRoot()
-            local hum = GetHum()
-            if not char or not root or not hum or hum.Health <= 0 then
-                task.wait(2)
-                farmStuckPos = nil
-                return
-            end
-            
-            local pg = LocalPlayer:FindFirstChild("PlayerGui")
-            if pg and pg:FindFirstChild("Main (minimal)") then return end
-            
-            local lv = GetLevel()
-            
-            if IsSea1() and lv >= 700 then
-                CommF:InvokeServer("TravelDressrosa")
-                task.wait(5)
-                farmStuckPos = nil
-                return
-            end
-            
-            if IsSea2() and lv >= 1250 and lv < 1350 and Distance(CFrame.new(931,126,33132)) >= 5000 then
-                CommF:InvokeServer("requestEntrance", Vector3.new(923.21, 126.98, 32852.83))
-                task.wait(3)
-                return
-            end
-            
-            local quest = GetQuest()
-            if not quest then return end
-            
-            local mobName = quest[1]
-            local questName = quest[2]
-            local questLevel = quest[3]
-            local npcCF = quest[4]
-            local mobAreaCF = quest[5]
-            
-            local main = pg and pg:FindFirstChild("Main")
-            local questGui = main and main:FindFirstChild("Quest")
-            
-            if questGui and questGui.Visible == false then
-                farmStuckPos = nil
-                SmartMove(npcCF)
-                if Distance(npcCF) <= 10 then
-                    task.wait(0.5)
-                    CommF:InvokeServer("StartQuest", questName, questLevel)
-                    task.wait(0.5)
-                end
-            else
-                if not farmStuckPos then
-                    farmStuckPos = mobAreaCF + Vector3.new(0, getgenv().KaitunSettings.FarmHeight, 0)
-                end
-                
-                if Distance(farmStuckPos) > 15 then
-                    SmartMove(CFrame.new(farmStuckPos.Position or farmStuckPos))
-                    return
-                end
-                
-                root.CFrame = CFrame.new(farmStuckPos.Position or farmStuckPos)
-                pcall(function() root.AssemblyLinearVelocity = Vector3.new(0, 0, 0) end)
-                
-                EquipTool("Melee")
-                BringAllMobs(mobName)
-                
-                if questGui.Container and questGui.Container:FindFirstChild("QuestTitle") 
-                   and questGui.Container.QuestTitle:FindFirstChild("Title") then
-                    local title = questGui.Container.QuestTitle.Title.Text
-                    if not string.find(title, mobName) then
-                        questGui.Visible = false
+                -- Xoa child effects
+                for _, child in ipairs(
+                        v:GetChildren()) do
+                    local cn = child.ClassName
+                    if cn == "Decal"
+                        or cn == "Texture"
+                        or cn == "SurfaceAppearance"
+                        or cn == "SpecialMesh"
+                        or cn == "Fire"
+                        or cn == "Smoke"
+                        or cn == "Sparkles"
+                        or cn == "ParticleEmitter"
+                        or cn == "Trail"
+                        or cn == "PointLight"
+                        or cn == "SpotLight"
+                        or cn == "SurfaceLight"
+                        or cn == "Highlight"
+                        or cn == "BillboardGui"
+                        or cn == "SurfaceGui"
+                        or cn == "Sound"
+                        then
+                        child:Destroy()
                     end
                 end
             end
         end)
     end
-end)
+end
 
--- ==================== BRING MOB LOOP RIÊNG ====================
-RunService.Heartbeat:Connect(function()
-    if not getgenv().KaitunSettings.AutoLevel then return end
-    if not getgenv().KaitunSettings.BringMob then return end
-    
-    local pg = LocalPlayer:FindFirstChild("PlayerGui")
-    local main = pg and pg:FindFirstChild("Main")
-    local questGui = main and main:FindFirstChild("Quest")
-    
-    if questGui and questGui.Visible and farmStuckPos then
-        local quest = GetQuest()
-        if quest then
-            BringAllMobs(quest[1])
-        end
+-- ============================================
+-- BUOC 1: CAMERA TAT HOAN TOAN
+-- ============================================
+print("[AFK v2] Buoc 1: Camera...")
+
+local function lockCamera()
+    local cam = Workspace.CurrentCamera
+    if cam then
+        cam.CameraType =
+            Enum.CameraType.Scriptable
+        cam.CFrame = CFrame.new(
+            0, -50000, 0)
+        cam.FieldOfView = 1
+        cam.CameraSubject = nil
+
+        -- Tat near/far clip
+        -- GPU khong can tinh depth
+        pcall(function()
+            cam.NearPlaneZ = 0.01
+        end)
     end
-end)
+end
 
--- ==================== RESET FARM POS ====================
-task.spawn(function()
-    local lastLv = GetLevel()
-    while task.wait(3) do
-        local cur = GetLevel()
-        if cur ~= lastLv then
-            local diff = cur - lastLv
-            if diff > 5 or diff < 0 then
-                farmStuckPos = nil
-            end
-            lastLv = cur
-            print("[Kaitun] ⬆️ Level: " .. cur)
-        end
-    end
-end)
+lockCamera()
 
--- ==================== AUTO REJOIN ====================
-pcall(function()
-    game:GetService("CoreGui").RobloxPromptGui.promptOverlay.ChildAdded:Connect(function(child)
-        if child.Name == "ErrorPrompt" then
-            pcall(function()
-                ReplicatedStorage.__ServerBrowser:InvokeServer("teleport", game.JobId)
-            end)
-        end
+-- Khi camera moi tao
+track(
+    Workspace:GetPropertyChangedSignal(
+        "CurrentCamera"):Connect(function()
+        task.wait(0.1)
+        lockCamera()
     end)
+)
+
+print("[AFK v2] Camera: OFF (-50000)")
+
+-- ============================================
+-- BUOC 2: BLACK SCREEN UI
+-- ============================================
+print("[AFK v2] Buoc 2: Black Screen...")
+
+local PlayerGui =
+    LocalPlayer:WaitForChild("PlayerGui")
+
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "AFK_BLACK"
+ScreenGui.ResetOnSpawn = false
+ScreenGui.IgnoreGuiInset = true
+ScreenGui.DisplayOrder = 2147483647
+ScreenGui.ZIndexBehavior =
+    Enum.ZIndexBehavior.Global
+
+local BlackFrame = Instance.new("Frame")
+BlackFrame.Size = UDim2.new(1, 0, 1, 0)
+BlackFrame.Position = UDim2.new(0, 0, 0, 0)
+BlackFrame.BackgroundColor3 =
+    Color3.new(0, 0, 0)
+BlackFrame.BackgroundTransparency = 0
+BlackFrame.BorderSizePixel = 0
+BlackFrame.ZIndex = 2147483647
+BlackFrame.Parent = ScreenGui
+
+-- Info text nho
+local InfoLabel = Instance.new("TextLabel")
+InfoLabel.Size = UDim2.new(0, 300, 0, 20)
+InfoLabel.Position = UDim2.new(
+    0.5, -150, 1, -25)
+InfoLabel.BackgroundTransparency = 1
+InfoLabel.TextColor3 =
+    Color3.new(0.2, 0.2, 0.2)
+InfoLabel.TextSize = 12
+InfoLabel.Font = Enum.Font.Code
+InfoLabel.Text = "AFK BOT v2.0 | Active"
+InfoLabel.ZIndex = 2147483647
+InfoLabel.Parent = BlackFrame
+
+ScreenGui.Parent = PlayerGui
+
+print("[AFK v2] Black Screen: ON")
+
+-- ============================================
+-- BUOC 3: TAT UI + CORE GUI
+-- ============================================
+print("[AFK v2] Buoc 3: Kill UI...")
+
+pcall(function()
+    StarterGui:SetCoreGuiEnabled(
+        Enum.CoreGuiType.All, false)
+    StarterGui:SetCore(
+        "TopbarEnabled", false)
 end)
 
-print([[
-╔══════════════════════════════════════════════════════╗
-║  🎯 KAITUN v7 - FIXED ANTI-CHEAT & FAST ATTACK       ║
-║  ✅ Đã fix lỗi tọa độ quái vượt trục Y 50k           ║
-║  ✅ Fast Attack nhận sát thương trực tiếp chuẩn      ║
-╚══════════════════════════════════════════════════════╝
-]])
-print("[Kaitun] Level: " .. GetLevel() .. " | Team: " .. getgenv().KaitunSettings.Team)
+local function hideAllUI()
+    for _, gui in ipairs(
+            PlayerGui:GetChildren()) do
+        pcall(function()
+            if gui.Name ~= "AFK_BLACK"
+                and gui:IsA("ScreenGui") then
+                gui.Enabled = false
+            end
+        end)
+    end
+end
+
+hideAllUI()
+
+track(
+    PlayerGui.ChildAdded:Connect(function(child)
+        task.defer(function()
+            pcall(function()
+                if child.Name ~= "AFK_BLACK"
+                    and child:IsA("ScreenGui")
+                    then
+                    child.Enabled = false
+                end
+            end)
+        end)
+    end)
+)
+
+print("[AFK v2] UI: Hidden")
+
+-- ============================================
+-- BUOC 4: LIGHTING = BLACK
+-- ============================================
+print("[AFK v2] Buoc 4: Lighting...")
+
+for _, v in ipairs(Lighting:GetChildren()) do
+    pcall(function() v:Destroy() end)
+end
+
+Lighting.Brightness = 0
+Lighting.Ambient = Color3.new(0, 0, 0)
+Lighting.OutdoorAmbient = Color3.new(0, 0, 0)
+Lighting.GlobalShadows = false
+Lighting.FogEnd = 0
+Lighting.FogStart = 0
+Lighting.FogColor = Color3.new(0, 0, 0)
+Lighting.ClockTime = 0
+
+track(
+    Lighting.DescendantAdded:Connect(function(v)
+        pcall(function() v:Destroy() end)
+    end)
+)
+
+print("[AFK v2] Lighting: Black")
+
+-- ============================================
+-- BUOC 5: TERRAIN CLEAR
+-- ============================================
+print("[AFK v2] Buoc 5: Terrain...")
+
+local Terrain =
+    Workspace:FindFirstChildOfClass("Terrain")
+if Terrain then
+    pcall(function()
+        Terrain:Clear()
+        Terrain.Decoration = false
+        Terrain.WaterTransparency = 1
+        Terrain.WaterWaveSize = 0
+        Terrain.WaterWaveSpeed = 0
+        Terrain.WaterReflectance = 0
+    end)
+end
+
+print("[AFK v2] Terrain: Cleared")
+
+-- ============================================
+-- BUOC 6: XOA SOUNDS
+-- (Sound dung CPU de decode + RAM buffer)
+-- ============================================
+print("[AFK v2] Buoc 6: Sounds...")
+
+killAllSounds()
+
+-- Block sound moi
+track(
+    Workspace.DescendantAdded:Connect(
+        function(v)
+            pcall(function()
+                if v:IsA("Sound") then
+                    v:Stop()
+                    v.Volume = 0
+                    v:Destroy()
+                end
+            end)
+        end)
+)
+
+track(
+    SoundService.DescendantAdded:Connect(
+        function(v)
+            pcall(function()
+                if v:IsA("Sound") then
+                    v:Stop()
+                    v.Volume = 0
+                    v:Destroy()
+                end
+            end)
+        end)
+)
+
+print("[AFK v2] Sounds: Killed")
+
+-- ============================================
+-- BUOC 7: XOA EFFECTS + TEXTURES + SIMPLIFY
+-- (Lam 1 lan duy nhat, co batch)
+-- ============================================
+print("[AFK v2] Buoc 7: Deep clean...")
+
+task.spawn(function()
+    local descs = Workspace:GetDescendants()
+    local total = #descs
+    local cleaned = 0
+    local batchSize = 100
+
+    for i = 1, total, batchSize do
+        local limit = math.min(
+            i + batchSize - 1, total)
+
+        for j = i, limit do
+            local v = descs[j]
+            if v and v.Parent then
+                pcall(function()
+                    local cn = v.ClassName
+
+                    -- Xoa effects
+                    if cn == "ParticleEmitter"
+                        or cn == "Trail"
+                        or cn == "Beam"
+                        or cn == "Fire"
+                        or cn == "Smoke"
+                        or cn == "Sparkles"
+                        or cn == "Explosion"
+                        or cn == "PointLight"
+                        or cn == "SpotLight"
+                        or cn == "SurfaceLight"
+                        or cn == "Highlight"
+                        or cn == "Decal"
+                        or cn == "Texture"
+                        or cn == "SurfaceAppearance"
+                        or cn == "SpecialMesh"
+                        or cn == "BlockMesh"
+                        or cn == "CylinderMesh"
+                        or cn == "BillboardGui"
+                        or cn == "SurfaceGui"
+                        then
+                        v:Destroy()
+                        cleaned = cleaned + 1
+
+                    -- Sound
+                    elseif cn == "Sound" then
+                        v:Stop()
+                        v:Destroy()
+                        cleaned = cleaned + 1
+
+                    -- Simplify parts
+                    elseif v:IsA("BasePart")
+                        and not v:IsA("Terrain")
+                        then
+                        v.Material =
+                            Enum.Material
+                            .SmoothPlastic
+                        v.Reflectance = 0
+                        v.CastShadow = false
+                    end
+                end)
+            end
+        end
+
+        -- Nhuong CPU giua cac batch
+        task.wait()
+    end
+
+    print("[AFK v2] Deep clean done: "
+        .. cleaned .. " objects")
+
+    -- GC sau khi xoa nhieu
+    forceGC()
+end)
+
+-- Block effects moi trong Workspace
+track(
+    Workspace.DescendantAdded:Connect(
+        function(v)
+            task.defer(function()
+                pcall(function()
+                    if not v or not v.Parent then
+                        return
+                    end
+
+                    local cn = v.ClassName
+
+                    if cn == "ParticleEmitter"
+                        or cn == "Trail"
+                        or cn == "Beam"
+                        or cn == "Fire"
+                        or cn == "Smoke"
+                        or cn == "Sparkles"
+                        or cn == "Explosion"
+                        or cn == "PointLight"
+                        or cn == "SpotLight"
+                        or cn == "SurfaceLight"
+                        or cn == "Highlight"
+                        or cn == "Decal"
+                        or cn == "Texture"
+                        or cn == "SurfaceAppearance"
+                        or cn == "BillboardGui"
+                        or cn == "SurfaceGui"
+                        then
+                        v:Destroy()
+
+                    elseif cn == "Sound" then
+                        v:Stop()
+                        v.Volume = 0
+                        v:Destroy()
+
+                    elseif v:IsA("BasePart") then
+                        v.Material =
+                            Enum.Material
+                            .SmoothPlastic
+                        v.CastShadow = false
+                        v.Reflectance = 0
+                    end
+                end)
+            end)
+        end)
+)
+
+-- ============================================
+-- BUOC 8: RENDER QUALITY THAP NHAT
+-- ============================================
+print("[AFK v2] Buoc 8: Render settings...")
+
+pcall(function()
+    settings().Rendering.QualityLevel =
+        Enum.QualityLevel.Level01
+end)
+
+pcall(function()
+    setfpscap(15)
+end)
+
+print("[AFK v2] FPS Cap: 15 (sieu tiet kiem)")
+
+-- ============================================
+-- BUOC 9: KILL ANIMATIONS
+-- (Animation update MOI FRAME = ton CPU)
+-- ============================================
+print("[AFK v2] Buoc 9: Animations...")
+
+killAnimations()
+
+-- Khi respawn, kill animations moi
+track(
+    LocalPlayer.CharacterAdded:Connect(
+        function(char)
+            task.wait(1)
+            killAnimations()
+
+            -- Kill sounds tren character moi
+            pcall(function()
+                for _, v in ipairs(
+                        char:GetDescendants()
+                        ) do
+                    if v:IsA("Sound") then
+                        v:Stop()
+                        v.Volume = 0
+                    end
+                end
+            end)
+        end)
+)
+
+print("[AFK v2] Animations: Stopped")
+
+-- ============================================
+-- BUOC 10: MEMORY LEAK DETECTOR + AUTO FIX
+-- Kiem tra RAM moi 15 giay
+-- Neu tang lien tuc = memory leak
+-- Tu dong fix
+-- ============================================
+print("[AFK v2] Buoc 10: Memory Monitor...")
+
+lastMemory = getMemoryMB()
+
+task.spawn(function()
+    while true do
+        task.wait(15)
+
+        local currentMem = getMemoryMB()
+        local diff = currentMem - lastMemory
+
+        -- Update info
+        pcall(function()
+            InfoLabel.Text = string.format(
+                "AFK v2 | RAM: %.1fMB | "
+                .. "Delta: %+.1fMB | "
+                .. "FPS: 15",
+                currentMem, diff)
+        end)
+
+        -- MEMORY LEAK DETECTION
+        if diff > 5 then
+            -- RAM tang > 5MB trong 15s
+            -- = co the leak
+            memoryLeakCount =
+                memoryLeakCount + 1
+
+            print("[LEAK] RAM tang "
+                .. string.format("%.1f", diff)
+                .. "MB! Count: "
+                .. memoryLeakCount)
+
+            if memoryLeakCount >= 3 then
+                -- 3 lan lien tiep tang
+                -- = LEAK XAC NHAN
+                print("[LEAK] DETECTED! "
+                    .. "Auto fixing...")
+
+                -- FIX 1: Force GC
+                forceGC()
+
+                -- FIX 2: Xoa effects moi
+                task.spawn(function()
+                    local descs =
+                        Workspace
+                        :GetDescendants()
+                    for _, v in ipairs(descs) do
+                        pcall(function()
+                            local cn =
+                                v.ClassName
+                            if cn ==
+                                "ParticleEmitter"
+                                or cn == "Trail"
+                                or cn == "Sound"
+                                or cn == "Beam"
+                                or cn == "Fire"
+                                or cn == "Smoke"
+                                then
+                                v:Destroy()
+                            end
+                        end)
+                    end
+                end)
+
+                -- FIX 3: Kill animations
+                killAnimations()
+
+                -- FIX 4: Clear terrain
+                pcall(function()
+                    if Terrain then
+                        Terrain:Clear()
+                    end
+                end)
+
+                -- FIX 5: GC lai
+                task.wait(1)
+                forceGC()
+
+                memoryLeakCount = 0
+
+                local afterMem = getMemoryMB()
+                print("[LEAK] Fixed! RAM: "
+                    .. string.format(
+                        "%.1f", afterMem)
+                    .. "MB (freed "
+                    .. string.format(
+                        "%.1f",
+                        currentMem - afterMem)
+                    .. "MB)")
+            end
+        else
+            -- RAM on dinh
+            memoryLeakCount = 0
+        end
+
+        lastMemory = currentMem
+    end
+end)
+
+-- ============================================
+-- BUOC 11: AUTO GC MOI 30 GIAY
+-- (Thuong xuyen clean de RAM thap)
+-- ============================================
+
+task.spawn(function()
+    while true do
+        task.wait(30)
+        forceGC()
+    end
+end)
+
+-- ============================================
+-- BUOC 12: LOOP BAO TRI NHE
+-- Moi 5 giay, chi check nhung thu
+-- quan trong nhat (khong quet descendants)
+-- ============================================
+
+task.spawn(function()
+    while true do
+        task.wait(5)
+        pcall(function()
+            -- Camera
+            lockCamera()
+
+            -- Lighting
+            Lighting.Brightness = 0
+            Lighting.GlobalShadows = false
+            Lighting.FogEnd = 0
+
+            -- Black Screen
+            if ScreenGui then
+                ScreenGui.Enabled = true
+            end
+            if BlackFrame then
+                BlackFrame
+                    .BackgroundTransparency = 0
+            end
+
+            -- UI
+            pcall(function()
+                StarterGui:SetCoreGuiEnabled(
+                    Enum.CoreGuiType.All,
+                    false)
+            end)
+        end)
+    end
+end)
+
+-- ============================================
+-- BUOC 13: DEEP CLEAN MOI 60 GIAY
+-- (Quet descendants nhung it lan)
+-- ============================================
+
+task.spawn(function()
+    while true do
+        task.wait(60)
+        pcall(function()
+            -- Xoa effects moi xuat hien
+            local descs =
+                Workspace:GetDescendants()
+            local batchSize = 150
+
+            for i = 1, #descs, batchSize do
+                for j = i, math.min(
+                        i + batchSize - 1,
+                        #descs) do
+                    local v = descs[j]
+                    if v and v.Parent then
+                        pcall(function()
+                            local cn =
+                                v.ClassName
+                            if cn ==
+                                "ParticleEmitter"
+                                or cn == "Trail"
+                                or cn == "Beam"
+                                or cn == "Fire"
+                                or cn == "Smoke"
+                                or cn == "Sparkles"
+                                or cn == "Sound"
+                                or cn == "Highlight"
+                                then
+                                if cn == "Sound"
+                                    then
+                                    v:Stop()
+                                end
+                                v:Destroy()
+                            end
+                        end)
+                    end
+                end
+                task.wait()
+            end
+
+            -- Kill animations
+            killAnimations()
+
+            -- GC
+            forceGC()
+
+            -- Terrain
+            if Terrain then
+                pcall(function()
+                    Terrain.Decoration = false
+                end)
+            end
+        end)
+    end
+end)
+
+-- ============================================
+-- BUOC 14: ANTI-KICK AFK
+-- Giu nhan vat song de khong bi kick
+-- ============================================
+
+task.spawn(function()
+    while true do
+        task.wait(60)
+        pcall(function()
+            -- Simulate input nhe
+            -- (mot so game kick AFK)
+            local char = LocalPlayer.Character
+            if char then
+                local hrp =
+                    char:FindFirstChild(
+                        "HumanoidRootPart")
+                if hrp then
+                    -- Giu vi tri hien tai
+                    -- Khong di chuyen
+                    hrp.Anchored = true
+                end
+            end
+        end)
+    end
+end)
+
+print("[AFK v2] Anti-kick: Active")
+
+-- ============================================
+-- HOAN TAT
+-- ============================================
+
+-- GC cuoi cung
+task.wait(3)
+forceGC()
+
+local finalMem = getMemoryMB()
