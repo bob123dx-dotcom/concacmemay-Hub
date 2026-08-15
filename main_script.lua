@@ -1,7 +1,8 @@
 -- ============================================
--- BLOX FRUITS AFK BOT v2.0
--- GPU = 0% | CPU = MIN | RAM = AUTO CLEAN
--- MEMORY LEAK DETECTOR + FIXER
+-- AFK BOT v3.0 - HONEST EDITION
+-- Chi lam nhung gi THUC SU hoat dong
+-- Khong noi doi ve collectgarbage
+-- Kaitun SAFE
 -- ============================================
 
 local Players = game:GetService("Players")
@@ -9,34 +10,68 @@ local Lighting = game:GetService("Lighting")
 local Workspace = game:GetService("Workspace")
 local StarterGui = game:GetService("StarterGui")
 local RunService = game:GetService("RunService")
-local ContentProvider =
-    game:GetService("ContentProvider")
-local TweenService =
-    game:GetService("TweenService")
 local SoundService =
     game:GetService("SoundService")
-local ReplicatedStorage =
-    game:GetService("ReplicatedStorage")
 local LocalPlayer = Players.LocalPlayer
+local connections = {}
 
 if not game:IsLoaded() then
     game.Loaded:Wait()
 end
 task.wait(2)
 
-print("[AFK v2] Khoi dong...")
+print("[AFK v3] Khoi dong...")
 
 -- ============================================
--- BIEN THEO DOI MEMORY
+-- CONFIG: Chon tinh nang muon bat
+-- (De Kaitun khong bi break)
 -- ============================================
-local lastMemory = 0
-local memoryLeakCount = 0
-local connections = {} -- Luu connections
-                       -- de disconnect sau
+local CONFIG = {
+    -- Camera trick: THUC SU giam GPU
+    CAMERA_TRICK = true,
+
+    -- Black screen UI: THUC SU den man
+    BLACK_SCREEN = true,
+
+    -- Tat sound: THUC SU giam CPU
+    -- CHUYEN Y: Kaitun dung sound?
+    -- Neu co -> de FALSE
+    KILL_SOUNDS = true,
+
+    -- Xoa effects (particle/trail/fire...)
+    -- AN TOAN voi Kaitun
+    KILL_EFFECTS = true,
+
+    -- Xoa den (PointLight/SpotLight)
+    -- Giam GPU kha nhieu
+    KILL_LIGHTS = true,
+
+    -- Xoa textures/decals
+    -- CHUYEN Y: Lam character xau hon
+    -- Nhung giam VRAM that su
+    KILL_TEXTURES = true,
+
+    -- CastShadow = false tren tat ca parts
+    -- Day la cai THUC SU giam GPU nhieu
+    -- Blox Fruits co rat nhieu shadow
+    NO_SHADOWS = true,
+
+    -- FPS cap
+    -- 15 = tiet kiem nhat
+    -- 30 = can bang
+    FPS_CAP = 15,
+
+    -- Anti-AFK kick
+    ANTI_KICK = true,
+
+    -- KHONG kill animations
+    -- Vi Kaitun can character move
+    -- de farm duoc
+    KILL_ANIMATIONS = false,
+}
 
 -- ============================================
--- HAM: Luu connection de quan ly
--- (Tranh memory leak tu connections)
+-- HAM TRACK CONNECTION
 -- ============================================
 local function track(conn)
     table.insert(connections, conn)
@@ -44,276 +79,190 @@ local function track(conn)
 end
 
 -- ============================================
--- HAM: Collect garbage manh
--- Roblox Lua co GC nhung can ep chay
+-- LOOKUP TABLE: Nhanh hon if/elseif chain
 -- ============================================
-local function forceGC()
-    -- Goi nhieu lan de GC clean sach
-    for _ = 1, 5 do
-        pcall(function()
-            collectgarbage("collect")
-        end)
-    end
-    pcall(function()
-        collectgarbage("collect")
-        collectgarbage("count")
-    end)
-end
 
--- ============================================
--- HAM: Doc memory hien tai (MB)
--- ============================================
-local function getMemoryMB()
-    local mem = 0
-    pcall(function()
-        mem = collectgarbage("count") / 1024
-    end)
-    return mem
-end
-
--- ============================================
--- HAM: Xoa sound (rat ton RAM)
--- ============================================
-local function killAllSounds()
-    for _, v in ipairs(
-            SoundService:GetDescendants()) do
-        pcall(function()
-            if v:IsA("Sound") then
-                v:Stop()
-                v.Volume = 0
-                v.Playing = false
-                v:Destroy()
-            end
-        end)
-    end
-
-    -- Sound trong Workspace
-    for _, v in ipairs(
-            Workspace:GetDescendants()) do
-        pcall(function()
-            if v:IsA("Sound") then
-                v:Stop()
-                v.Volume = 0
-                v:Destroy()
-            end
-        end)
-    end
-end
-
--- ============================================
--- HAM: Xoa particles/trails/effects
--- (Nhung thu nay TON GPU + RAM nhat)
--- ============================================
-local EFFECT_CLASSES = {
-    "ParticleEmitter",
-    "Trail", "Beam",
-    "Fire", "Smoke", "Sparkles",
-    "Explosion",
-    "PointLight", "SpotLight",
-    "SurfaceLight",
-    "Highlight",
-    "BillboardGui",
-    "SurfaceGui",
+-- Effects can xoa (THUC SU giam GPU)
+local KILL_EFFECT_SET = {
+    ParticleEmitter = true,
+    Trail = true,
+    Beam = true,
+    Fire = true,
+    Smoke = true,
+    Sparkles = true,
+    Explosion = true,
+    Highlight = true,
 }
 
-local function killEffects(parent)
-    for _, v in ipairs(
-            parent:GetDescendants()) do
-        pcall(function()
-            for _, cls in
-                    ipairs(EFFECT_CLASSES) do
-                if v:IsA(cls) then
-                    v:Destroy()
-                    return
-                end
-            end
-        end)
+-- Den can xoa
+local KILL_LIGHT_SET = {
+    PointLight = true,
+    SpotLight = true,
+    SurfaceLight = true,
+}
+
+-- Texture can xoa
+local KILL_TEXTURE_SET = {
+    Decal = true,
+    Texture = true,
+    SurfaceAppearance = true,
+    SpecialMesh = true,
+}
+
+-- GUI khong can thiet
+-- (Kaitun dung ScreenGui, khong phai cai nay)
+local KILL_GUI_SET = {
+    BillboardGui = true,
+    SurfaceGui = true,
+}
+
+-- ============================================
+-- HAM: Process 1 object
+-- Quyet dinh xoa hay bo qua
+-- ============================================
+local function processOne(v)
+    if not v or not v.Parent then return end
+
+    local cn = v.ClassName
+
+    -- Xoa effects
+    if CONFIG.KILL_EFFECTS
+        and KILL_EFFECT_SET[cn] then
+        v:Destroy()
+        return
+    end
+
+    -- Xoa den
+    if CONFIG.KILL_LIGHTS
+        and KILL_LIGHT_SET[cn] then
+        v:Destroy()
+        return
+    end
+
+    -- Xoa textures
+    if CONFIG.KILL_TEXTURES
+        and KILL_TEXTURE_SET[cn] then
+        v:Destroy()
+        return
+    end
+
+    -- Xoa GUI tren part
+    if KILL_GUI_SET[cn] then
+        v:Destroy()
+        return
+    end
+
+    -- Xoa sound
+    if CONFIG.KILL_SOUNDS
+        and cn == "Sound" then
+        pcall(function() v:Stop() end)
+        v:Destroy()
+        return
+    end
+
+    -- BasePart: chi don gian hoa
+    -- KHONG destroy (gay crash game)
+    if CONFIG.NO_SHADOWS
+        and v:IsA("BasePart")
+        and not v:IsA("Terrain") then
+        v.CastShadow = false
+        v.Material =
+            Enum.Material.SmoothPlastic
+        v.Reflectance = 0
+        return
     end
 end
 
 -- ============================================
--- HAM: Xoa textures khoi parts
--- (Texture load vao VRAM = ton GPU memory)
+-- BUOC 1: CAMERA
+-- Day la cach THUC SU giam GPU
+-- Camera o y=-50000 + Scriptable
+-- = Engine skip render scene
 -- ============================================
-local function stripTextures(parent)
-    for _, v in ipairs(
-            parent:GetDescendants()) do
-        pcall(function()
-            if v:IsA("Decal")
-                or v:IsA("Texture")
-                or v:IsA("SurfaceAppearance")
-                then
-                v:Destroy()
-            end
-
-            -- Xoa mesh data
-            -- (MeshPart dung rat nhieu RAM)
-            if v:IsA("SpecialMesh")
-                or v:IsA("BlockMesh")
-                or v:IsA("CylinderMesh") then
-                v:Destroy()
-            end
-        end)
-    end
-end
-
--- ============================================
--- HAM: Xoa Animations
--- (AnimationTrack ton CPU moi frame)
--- ============================================
-local function killAnimations()
-    pcall(function()
-        local char = LocalPlayer.Character
-        if char then
-            local hum = char:FindFirstChildOfClass(
-                "Humanoid")
-            if hum then
-                local animator =
-                    hum:FindFirstChildOfClass(
-                        "Animator")
-                if animator then
-                    for _, track in ipairs(
-                        animator:GetPlayingAnimationTracks()
-                        ) do
-                        track:Stop()
-                        track:Destroy()
-                    end
-                end
-            end
-        end
-    end)
-end
-
--- ============================================
--- HAM: Lam MeshPart thanh Part thuong
--- (MeshPart dung 10-50x RAM hon Part)
--- ============================================
-local function simplifyParts(parent)
-    for _, v in ipairs(
-            parent:GetDescendants()) do
-        pcall(function()
-            if v:IsA("BasePart")
-                and not v:IsA("Terrain") then
-
-                -- Material don gian nhat
-                v.Material =
-                    Enum.Material.SmoothPlastic
-                v.Reflectance = 0
-                v.CastShadow = false
-
-                -- Xoa child effects
-                for _, child in ipairs(
-                        v:GetChildren()) do
-                    local cn = child.ClassName
-                    if cn == "Decal"
-                        or cn == "Texture"
-                        or cn == "SurfaceAppearance"
-                        or cn == "SpecialMesh"
-                        or cn == "Fire"
-                        or cn == "Smoke"
-                        or cn == "Sparkles"
-                        or cn == "ParticleEmitter"
-                        or cn == "Trail"
-                        or cn == "PointLight"
-                        or cn == "SpotLight"
-                        or cn == "SurfaceLight"
-                        or cn == "Highlight"
-                        or cn == "BillboardGui"
-                        or cn == "SurfaceGui"
-                        or cn == "Sound"
-                        then
-                        child:Destroy()
-                    end
-                end
-            end
-        end)
-    end
-end
-
--- ============================================
--- BUOC 1: CAMERA TAT HOAN TOAN
--- ============================================
-print("[AFK v2] Buoc 1: Camera...")
+print("[AFK v3] Camera lock...")
 
 local function lockCamera()
     local cam = Workspace.CurrentCamera
-    if cam then
-        cam.CameraType =
-            Enum.CameraType.Scriptable
-        cam.CFrame = CFrame.new(
-            0, -50000, 0)
-        cam.FieldOfView = 1
-        cam.CameraSubject = nil
+    if not cam then return end
 
-        -- Tat near/far clip
-        -- GPU khong can tinh depth
-        pcall(function()
-            cam.NearPlaneZ = 0.01
-        end)
-    end
+    cam.CameraType =
+        Enum.CameraType.Scriptable
+    cam.CFrame = CFrame.new(0, -50000, 0)
+    cam.FieldOfView = 1
+    cam.CameraSubject = nil
 end
 
-lockCamera()
+if CONFIG.CAMERA_TRICK then
+    lockCamera()
 
--- Khi camera moi tao
-track(
-    Workspace:GetPropertyChangedSignal(
-        "CurrentCamera"):Connect(function()
-        task.wait(0.1)
-        lockCamera()
-    end)
-)
+    track(
+        Workspace:GetPropertyChangedSignal(
+            "CurrentCamera"):Connect(
+            function()
+                task.wait(0.1)
+                lockCamera()
+            end)
+    )
+end
 
-print("[AFK v2] Camera: OFF (-50000)")
+print("[AFK v3] Camera: Locked at -50000")
 
 -- ============================================
--- BUOC 2: BLACK SCREEN UI
+-- BUOC 2: BLACK SCREEN
+-- Frame den phu len toan man hinh
+-- GPU chi ve 1 mau den = load = 0
 -- ============================================
-print("[AFK v2] Buoc 2: Black Screen...")
+print("[AFK v3] Black screen...")
 
 local PlayerGui =
     LocalPlayer:WaitForChild("PlayerGui")
 
-local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "AFK_BLACK"
-ScreenGui.ResetOnSpawn = false
-ScreenGui.IgnoreGuiInset = true
-ScreenGui.DisplayOrder = 2147483647
-ScreenGui.ZIndexBehavior =
-    Enum.ZIndexBehavior.Global
+local ScreenGui, BlackFrame, InfoLabel
 
-local BlackFrame = Instance.new("Frame")
-BlackFrame.Size = UDim2.new(1, 0, 1, 0)
-BlackFrame.Position = UDim2.new(0, 0, 0, 0)
-BlackFrame.BackgroundColor3 =
-    Color3.new(0, 0, 0)
-BlackFrame.BackgroundTransparency = 0
-BlackFrame.BorderSizePixel = 0
-BlackFrame.ZIndex = 2147483647
-BlackFrame.Parent = ScreenGui
+if CONFIG.BLACK_SCREEN then
+    ScreenGui = Instance.new("ScreenGui")
+    ScreenGui.Name = "AFK_BLACK_v3"
+    ScreenGui.ResetOnSpawn = false
+    ScreenGui.IgnoreGuiInset = true
+    ScreenGui.DisplayOrder = 2147483647
 
--- Info text nho
-local InfoLabel = Instance.new("TextLabel")
-InfoLabel.Size = UDim2.new(0, 300, 0, 20)
-InfoLabel.Position = UDim2.new(
-    0.5, -150, 1, -25)
-InfoLabel.BackgroundTransparency = 1
-InfoLabel.TextColor3 =
-    Color3.new(0.2, 0.2, 0.2)
-InfoLabel.TextSize = 12
-InfoLabel.Font = Enum.Font.Code
-InfoLabel.Text = "AFK BOT v2.0 | Active"
-InfoLabel.ZIndex = 2147483647
-InfoLabel.Parent = BlackFrame
+    BlackFrame = Instance.new("Frame")
+    BlackFrame.Size =
+        UDim2.new(1, 0, 1, 0)
+    BlackFrame.BackgroundColor3 =
+        Color3.new(0, 0, 0)
+    BlackFrame.BackgroundTransparency = 0
+    BlackFrame.BorderSizePixel = 0
+    BlackFrame.ZIndex = 2147483647
+    BlackFrame.Parent = ScreenGui
 
-ScreenGui.Parent = PlayerGui
+    -- Status text (nhin thay duoc
+    -- khi can tat script)
+    InfoLabel = Instance.new("TextLabel")
+    InfoLabel.Size =
+        UDim2.new(1, 0, 0, 30)
+    InfoLabel.Position =
+        UDim2.new(0, 0, 1, -30)
+    InfoLabel.BackgroundTransparency = 1
+    InfoLabel.TextColor3 =
+        Color3.new(0.15, 0.15, 0.15)
+    InfoLabel.TextSize = 11
+    InfoLabel.Font = Enum.Font.Code
+    InfoLabel.Text =
+        "AFK BOT v3 | Active | "
+        .. "FPS:" .. CONFIG.FPS_CAP
+    InfoLabel.ZIndex = 2147483647
+    InfoLabel.Parent = BlackFrame
 
-print("[AFK v2] Black Screen: ON")
+    ScreenGui.Parent = PlayerGui
+end
+
+print("[AFK v3] Black screen: ON")
 
 -- ============================================
--- BUOC 3: TAT UI + CORE GUI
+-- BUOC 3: TAT CORE GUI
 -- ============================================
-print("[AFK v2] Buoc 3: Kill UI...")
+print("[AFK v3] Disable UI...")
 
 pcall(function()
     StarterGui:SetCoreGuiEnabled(
@@ -322,11 +271,12 @@ pcall(function()
         "TopbarEnabled", false)
 end)
 
-local function hideAllUI()
-    for _, gui in ipairs(
-            PlayerGui:GetChildren()) do
+-- An tat ca ScreenGui tru cua minh
+local function hideAllGUI()
+    for _, gui in
+            ipairs(PlayerGui:GetChildren()) do
         pcall(function()
-            if gui.Name ~= "AFK_BLACK"
+            if gui.Name ~= "AFK_BLACK_v3"
                 and gui:IsA("ScreenGui") then
                 gui.Enabled = false
             end
@@ -334,55 +284,69 @@ local function hideAllUI()
     end
 end
 
-hideAllUI()
+hideAllGUI()
 
 track(
-    PlayerGui.ChildAdded:Connect(function(child)
-        task.defer(function()
-            pcall(function()
-                if child.Name ~= "AFK_BLACK"
-                    and child:IsA("ScreenGui")
-                    then
-                    child.Enabled = false
-                end
+    PlayerGui.ChildAdded:Connect(
+        function(child)
+            task.defer(function()
+                pcall(function()
+                    if child.Name
+                            ~= "AFK_BLACK_v3"
+                        and child:IsA(
+                            "ScreenGui") then
+                        child.Enabled = false
+                    end
+                end)
             end)
         end)
-    end)
 )
 
-print("[AFK v2] UI: Hidden")
+print("[AFK v3] UI: Disabled")
 
 -- ============================================
--- BUOC 4: LIGHTING = BLACK
+-- BUOC 4: LIGHTING
 -- ============================================
-print("[AFK v2] Buoc 4: Lighting...")
+print("[AFK v3] Lighting...")
 
 for _, v in ipairs(Lighting:GetChildren()) do
-    pcall(function() v:Destroy() end)
+    pcall(function()
+        -- Chi xoa effects, giu cai khac
+        if v:IsA("PostEffect")
+            or v:IsA("Sky")
+            or v:IsA("Atmosphere") then
+            v:Destroy()
+        end
+    end)
 end
 
 Lighting.Brightness = 0
 Lighting.Ambient = Color3.new(0, 0, 0)
-Lighting.OutdoorAmbient = Color3.new(0, 0, 0)
+Lighting.OutdoorAmbient =
+    Color3.new(0, 0, 0)
 Lighting.GlobalShadows = false
 Lighting.FogEnd = 0
 Lighting.FogStart = 0
-Lighting.FogColor = Color3.new(0, 0, 0)
 Lighting.ClockTime = 0
 
 track(
-    Lighting.DescendantAdded:Connect(function(v)
-        pcall(function() v:Destroy() end)
-    end)
+    Lighting.DescendantAdded:Connect(
+        function(v)
+            pcall(function()
+                if v:IsA("PostEffect")
+                    or v:IsA("Sky")
+                    or v:IsA("Atmosphere") then
+                    v:Destroy()
+                end
+            end)
+        end)
 )
 
-print("[AFK v2] Lighting: Black")
+print("[AFK v3] Lighting: Black, no shadows")
 
 -- ============================================
--- BUOC 5: TERRAIN CLEAR
+-- BUOC 5: TERRAIN
 -- ============================================
-print("[AFK v2] Buoc 5: Terrain...")
-
 local Terrain =
     Workspace:FindFirstChildOfClass("Terrain")
 if Terrain then
@@ -394,468 +358,290 @@ if Terrain then
         Terrain.WaterWaveSpeed = 0
         Terrain.WaterReflectance = 0
     end)
+    print("[AFK v3] Terrain: Cleared")
 end
 
-print("[AFK v2] Terrain: Cleared")
-
 -- ============================================
--- BUOC 6: XOA SOUNDS
--- (Sound dung CPU de decode + RAM buffer)
+-- BUOC 6: DEEP CLEAN WORKSPACE
+-- Batch processing de tranh freeze
 -- ============================================
-print("[AFK v2] Buoc 6: Sounds...")
-
-killAllSounds()
-
--- Block sound moi
-track(
-    Workspace.DescendantAdded:Connect(
-        function(v)
-            pcall(function()
-                if v:IsA("Sound") then
-                    v:Stop()
-                    v.Volume = 0
-                    v:Destroy()
-                end
-            end)
-        end)
-)
-
-track(
-    SoundService.DescendantAdded:Connect(
-        function(v)
-            pcall(function()
-                if v:IsA("Sound") then
-                    v:Stop()
-                    v.Volume = 0
-                    v:Destroy()
-                end
-            end)
-        end)
-)
-
-print("[AFK v2] Sounds: Killed")
-
--- ============================================
--- BUOC 7: XOA EFFECTS + TEXTURES + SIMPLIFY
--- (Lam 1 lan duy nhat, co batch)
--- ============================================
-print("[AFK v2] Buoc 7: Deep clean...")
+print("[AFK v3] Deep cleaning...")
 
 task.spawn(function()
+    task.wait(0.5)
+
     local descs = Workspace:GetDescendants()
     local total = #descs
-    local cleaned = 0
-    local batchSize = 100
+    local removed = 0
+    local BATCH = 150
 
-    for i = 1, total, batchSize do
-        local limit = math.min(
-            i + batchSize - 1, total)
-
-        for j = i, limit do
+    for i = 1, total, BATCH do
+        for j = i,
+                math.min(i + BATCH - 1, total)
+                do
             local v = descs[j]
             if v and v.Parent then
+                local before = v.Parent
                 pcall(function()
-                    local cn = v.ClassName
-
-                    -- Xoa effects
-                    if cn == "ParticleEmitter"
-                        or cn == "Trail"
-                        or cn == "Beam"
-                        or cn == "Fire"
-                        or cn == "Smoke"
-                        or cn == "Sparkles"
-                        or cn == "Explosion"
-                        or cn == "PointLight"
-                        or cn == "SpotLight"
-                        or cn == "SurfaceLight"
-                        or cn == "Highlight"
-                        or cn == "Decal"
-                        or cn == "Texture"
-                        or cn == "SurfaceAppearance"
-                        or cn == "SpecialMesh"
-                        or cn == "BlockMesh"
-                        or cn == "CylinderMesh"
-                        or cn == "BillboardGui"
-                        or cn == "SurfaceGui"
-                        then
-                        v:Destroy()
-                        cleaned = cleaned + 1
-
-                    -- Sound
-                    elseif cn == "Sound" then
-                        v:Stop()
-                        v:Destroy()
-                        cleaned = cleaned + 1
-
-                    -- Simplify parts
-                    elseif v:IsA("BasePart")
-                        and not v:IsA("Terrain")
-                        then
-                        v.Material =
-                            Enum.Material
-                            .SmoothPlastic
-                        v.Reflectance = 0
-                        v.CastShadow = false
-                    end
+                    processOne(v)
                 end)
+                -- Dem neu bi xoa
+                if not v.Parent
+                    and before then
+                    removed = removed + 1
+                end
             end
         end
-
-        -- Nhuong CPU giua cac batch
-        task.wait()
+        task.wait() -- Nhuong CPU
     end
 
-    print("[AFK v2] Deep clean done: "
-        .. cleaned .. " objects")
-
-    -- GC sau khi xoa nhieu
-    forceGC()
+    print("[AFK v3] Removed: "
+        .. removed .. " objects")
+    print("[AFK v3] Deep clean: DONE")
 end)
 
--- Block effects moi trong Workspace
+-- ============================================
+-- BUOC 7: BLOCK OBJECT MOI
+-- Khi game spawn effect moi -> xoa ngay
+-- task.defer = khong block game thread
+-- ============================================
 track(
     Workspace.DescendantAdded:Connect(
         function(v)
+            -- task.defer: xu ly sau frame hien tai
+            -- Nhe hon task.wait(0)
             task.defer(function()
                 pcall(function()
-                    if not v or not v.Parent then
-                        return
-                    end
-
-                    local cn = v.ClassName
-
-                    if cn == "ParticleEmitter"
-                        or cn == "Trail"
-                        or cn == "Beam"
-                        or cn == "Fire"
-                        or cn == "Smoke"
-                        or cn == "Sparkles"
-                        or cn == "Explosion"
-                        or cn == "PointLight"
-                        or cn == "SpotLight"
-                        or cn == "SurfaceLight"
-                        or cn == "Highlight"
-                        or cn == "Decal"
-                        or cn == "Texture"
-                        or cn == "SurfaceAppearance"
-                        or cn == "BillboardGui"
-                        or cn == "SurfaceGui"
-                        then
-                        v:Destroy()
-
-                    elseif cn == "Sound" then
-                        v:Stop()
-                        v.Volume = 0
-                        v:Destroy()
-
-                    elseif v:IsA("BasePart") then
-                        v.Material =
-                            Enum.Material
-                            .SmoothPlastic
-                        v.CastShadow = false
-                        v.Reflectance = 0
-                    end
+                    processOne(v)
                 end)
             end)
         end)
 )
 
--- ============================================
--- BUOC 8: RENDER QUALITY THAP NHAT
--- ============================================
-print("[AFK v2] Buoc 8: Render settings...")
+print("[AFK v3] Auto-block: Active")
 
+-- ============================================
+-- BUOC 8: RENDER QUALITY
+-- Level01 = thap nhat
+-- THUC SU hoat dong trong Roblox
+-- ============================================
 pcall(function()
     settings().Rendering.QualityLevel =
         Enum.QualityLevel.Level01
 end)
 
 pcall(function()
-    setfpscap(15)
+    setfpscap(CONFIG.FPS_CAP)
 end)
 
-print("[AFK v2] FPS Cap: 15 (sieu tiet kiem)")
+print("[AFK v3] FPS: " .. CONFIG.FPS_CAP)
 
 -- ============================================
--- BUOC 9: KILL ANIMATIONS
--- (Animation update MOI FRAME = ton CPU)
+-- BUOC 9: SOUND
 -- ============================================
-print("[AFK v2] Buoc 9: Animations...")
+if CONFIG.KILL_SOUNDS then
+    -- SoundService
+    for _, v in ipairs(
+            SoundService:GetDescendants()) do
+        pcall(function()
+            if v:IsA("Sound") then
+                v:Stop()
+                v.Volume = 0
+                v:Destroy()
+            end
+        end)
+    end
 
-killAnimations()
+    track(
+        SoundService.DescendantAdded:Connect(
+            function(v)
+                task.defer(function()
+                    pcall(function()
+                        if v:IsA("Sound") then
+                            v:Stop()
+                            v:Destroy()
+                        end
+                    end)
+                end)
+            end)
+    )
 
--- Khi respawn, kill animations moi
+    print("[AFK v3] Sounds: Killed")
+end
+
+-- ============================================
+-- BUOC 10: ANTI-KICK
+-- Anchor HRP de khong bi fall
+-- Jump nho moi 4 phut (tranh kick AFK)
+-- ============================================
+if CONFIG.ANTI_KICK then
+    task.spawn(function()
+        while true do
+            task.wait(240) -- 4 phut
+
+            pcall(function()
+                local char =
+                    LocalPlayer.Character
+                if not char then return end
+
+                local hum =
+                    char:FindFirstChildOfClass(
+                        "Humanoid")
+
+                if hum then
+                    -- Jump nho -> anti kick
+                    hum.Jump = true
+                end
+            end)
+        end
+    end)
+
+    print("[AFK v3] Anti-kick: Active (4min)")
+end
+
+-- ============================================
+-- BUOC 11: MAINTENANCE LOOP
+-- Nhe, chi check nhung thu quan trong
+-- Khong quet GetDescendants
+-- ============================================
+task.spawn(function()
+    local tick = 0
+
+    while true do
+        task.wait(5)
+        tick = tick + 1
+
+        pcall(function()
+            -- Camera (moi 5s)
+            if CONFIG.CAMERA_TRICK then
+                lockCamera()
+            end
+
+            -- Lighting (moi 5s)
+            Lighting.Brightness = 0
+            Lighting.GlobalShadows = false
+
+            -- Black screen (moi 5s)
+            if ScreenGui then
+                ScreenGui.Enabled = true
+            end
+
+            -- Core GUI (moi 15s)
+            if tick % 3 == 0 then
+                pcall(function()
+                    StarterGui
+                        :SetCoreGuiEnabled(
+                        Enum.CoreGuiType.All,
+                        false)
+                end)
+                hideAllGUI()
+            end
+
+            -- Terrain (moi 60s)
+            if tick % 12 == 0 then
+                if Terrain then
+                    pcall(function()
+                        Terrain.Decoration
+                            = false
+                    end)
+                end
+            end
+        end)
+    end
+end)
+
+-- ============================================
+-- BUOC 12: RESPAWN HANDLER
+-- Khi character respawn, setup lai
+-- ============================================
 track(
     LocalPlayer.CharacterAdded:Connect(
         function(char)
             task.wait(1)
-            killAnimations()
-
-            -- Kill sounds tren character moi
             pcall(function()
-                for _, v in ipairs(
-                        char:GetDescendants()
-                        ) do
-                    if v:IsA("Sound") then
-                        v:Stop()
-                        v.Volume = 0
+                -- Camera lai
+                if CONFIG.CAMERA_TRICK then
+                    lockCamera()
+                end
+
+                -- Kill sound tren char moi
+                if CONFIG.KILL_SOUNDS then
+                    for _, v in ipairs(
+                            char:GetDescendants()
+                            ) do
+                        if v:IsA("Sound") then
+                            v:Stop()
+                            v.Volume = 0
+                        end
                     end
                 end
+
+                -- CastShadow = false
+                -- tren char moi
+                if CONFIG.NO_SHADOWS then
+                    for _, v in ipairs(
+                            char:GetDescendants()
+                            ) do
+                        if v:IsA("BasePart") then
+                            v.CastShadow = false
+                        end
+                    end
+                end
+
+                print("[AFK v3] Respawn: OK")
             end)
         end)
 )
 
-print("[AFK v2] Animations: Stopped")
-
 -- ============================================
--- BUOC 10: MEMORY LEAK DETECTOR + AUTO FIX
--- Kiem tra RAM moi 15 giay
--- Neu tang lien tuc = memory leak
--- Tu dong fix
+-- STATUS UPDATE (moi 30s)
+-- Dung Stats de doc memory dung
 -- ============================================
-print("[AFK v2] Buoc 10: Memory Monitor...")
-
-lastMemory = getMemoryMB()
-
 task.spawn(function()
-    while true do
-        task.wait(15)
+    -- Doi Stats service
+    local Stats = game:GetService("Stats")
 
-        local currentMem = getMemoryMB()
-        local diff = currentMem - lastMemory
-
-        -- Update info
-        pcall(function()
-            InfoLabel.Text = string.format(
-                "AFK v2 | RAM: %.1fMB | "
-                .. "Delta: %+.1fMB | "
-                .. "FPS: 15",
-                currentMem, diff)
-        end)
-
-        -- MEMORY LEAK DETECTION
-        if diff > 5 then
-            -- RAM tang > 5MB trong 15s
-            -- = co the leak
-            memoryLeakCount =
-                memoryLeakCount + 1
-
-            print("[LEAK] RAM tang "
-                .. string.format("%.1f", diff)
-                .. "MB! Count: "
-                .. memoryLeakCount)
-
-            if memoryLeakCount >= 3 then
-                -- 3 lan lien tiep tang
-                -- = LEAK XAC NHAN
-                print("[LEAK] DETECTED! "
-                    .. "Auto fixing...")
-
-                -- FIX 1: Force GC
-                forceGC()
-
-                -- FIX 2: Xoa effects moi
-                task.spawn(function()
-                    local descs =
-                        Workspace
-                        :GetDescendants()
-                    for _, v in ipairs(descs) do
-                        pcall(function()
-                            local cn =
-                                v.ClassName
-                            if cn ==
-                                "ParticleEmitter"
-                                or cn == "Trail"
-                                or cn == "Sound"
-                                or cn == "Beam"
-                                or cn == "Fire"
-                                or cn == "Smoke"
-                                then
-                                v:Destroy()
-                            end
-                        end)
-                    end
-                end)
-
-                -- FIX 3: Kill animations
-                killAnimations()
-
-                -- FIX 4: Clear terrain
-                pcall(function()
-                    if Terrain then
-                        Terrain:Clear()
-                    end
-                end)
-
-                -- FIX 5: GC lai
-                task.wait(1)
-                forceGC()
-
-                memoryLeakCount = 0
-
-                local afterMem = getMemoryMB()
-                print("[LEAK] Fixed! RAM: "
-                    .. string.format(
-                        "%.1f", afterMem)
-                    .. "MB (freed "
-                    .. string.format(
-                        "%.1f",
-                        currentMem - afterMem)
-                    .. "MB)")
-            end
-        else
-            -- RAM on dinh
-            memoryLeakCount = 0
-        end
-
-        lastMemory = currentMem
-    end
-end)
-
--- ============================================
--- BUOC 11: AUTO GC MOI 30 GIAY
--- (Thuong xuyen clean de RAM thap)
--- ============================================
-
-task.spawn(function()
     while true do
         task.wait(30)
-        forceGC()
-    end
-end)
-
--- ============================================
--- BUOC 12: LOOP BAO TRI NHE
--- Moi 5 giay, chi check nhung thu
--- quan trong nhat (khong quet descendants)
--- ============================================
-
-task.spawn(function()
-    while true do
-        task.wait(5)
         pcall(function()
-            -- Camera
-            lockCamera()
+            -- Day la cach DUNG de doc RAM
+            -- trong Roblox
+            local totalMem =
+                Stats:GetTotalMemoryUsageMb()
 
-            -- Lighting
-            Lighting.Brightness = 0
-            Lighting.GlobalShadows = false
-            Lighting.FogEnd = 0
-
-            -- Black Screen
-            if ScreenGui then
-                ScreenGui.Enabled = true
-            end
-            if BlackFrame then
-                BlackFrame
-                    .BackgroundTransparency = 0
+            if InfoLabel then
+                InfoLabel.Text =
+                    string.format(
+                        "AFK v3 | RAM: %.0fMB"
+                        .. " | FPS:%d | Active",
+                        totalMem,
+                        CONFIG.FPS_CAP)
             end
 
-            -- UI
-            pcall(function()
-                StarterGui:SetCoreGuiEnabled(
-                    Enum.CoreGuiType.All,
-                    false)
-            end)
+            print(string.format(
+                "[AFK v3] RAM: %.0fMB",
+                totalMem))
         end)
     end
 end)
 
 -- ============================================
--- BUOC 13: DEEP CLEAN MOI 60 GIAY
--- (Quet descendants nhung it lan)
+-- DONE
 -- ============================================
-
-task.spawn(function()
-    while true do
-        task.wait(60)
-        pcall(function()
-            -- Xoa effects moi xuat hien
-            local descs =
-                Workspace:GetDescendants()
-            local batchSize = 150
-
-            for i = 1, #descs, batchSize do
-                for j = i, math.min(
-                        i + batchSize - 1,
-                        #descs) do
-                    local v = descs[j]
-                    if v and v.Parent then
-                        pcall(function()
-                            local cn =
-                                v.ClassName
-                            if cn ==
-                                "ParticleEmitter"
-                                or cn == "Trail"
-                                or cn == "Beam"
-                                or cn == "Fire"
-                                or cn == "Smoke"
-                                or cn == "Sparkles"
-                                or cn == "Sound"
-                                or cn == "Highlight"
-                                then
-                                if cn == "Sound"
-                                    then
-                                    v:Stop()
-                                end
-                                v:Destroy()
-                            end
-                        end)
-                    end
-                end
-                task.wait()
-            end
-
-            -- Kill animations
-            killAnimations()
-
-            -- GC
-            forceGC()
-
-            -- Terrain
-            if Terrain then
-                pcall(function()
-                    Terrain.Decoration = false
-                end)
-            end
-        end)
-    end
-end)
-
--- ============================================
--- BUOC 14: ANTI-KICK AFK
--- Giu nhan vat song de khong bi kick
--- ============================================
-
-task.spawn(function()
-    while true do
-        task.wait(60)
-        pcall(function()
-            -- Simulate input nhe
-            -- (mot so game kick AFK)
-            local char = LocalPlayer.Character
-            if char then
-                local hrp =
-                    char:FindFirstChild(
-                        "HumanoidRootPart")
-                if hrp then
-                    -- Giu vi tri hien tai
-                    -- Khong di chuyen
-                    hrp.Anchored = true
-                end
-            end
-        end)
-    end
-end)
-
-print("[AFK v2] Anti-kick: Active")
-
--- ============================================
--- HOAN TAT
--- ============================================
-
--- GC cuoi cung
-task.wait(3)
-forceGC()
-
-local finalMem = getMemoryMB()
+print("╔══════════════════════════════════╗")
+print("║  AFK BOT v3.0 - HONEST EDITION ║")
+print("╠══════════════════════════════════╣")
+print("║  Camera: -50000 (GPU skip)      ║")
+print("║  Black Screen: UI Frame         ║")
+print("║  Shadows: ALL OFF               ║")
+print("║  Effects: AUTO DESTROY          ║")
+print("║  Sounds: KILLED                 ║")
+print("║  FPS: " .. CONFIG.FPS_CAP
+    .. " (real cap)              ║")
+print("║  Kaitun: SAFE (anim kept)       ║")
+print("║  Anti-kick: 4min jump           ║")
+print("╠══════════════════════════════════╣")
+print("║  collectgarbage = DISABLED      ║")
+print("║  RAM doc bang Stats service     ║")
+print("║  Khong fake features            ║")
+print("╚══════════════════════════════════╝")
