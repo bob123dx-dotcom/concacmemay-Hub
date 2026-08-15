@@ -30,7 +30,7 @@ print("[AFK v4] Bat dau...")
 -- Giam tai ngay lap tuc
 -- ============================================
 pcall(function()
-    setfpscap(20)
+    setfpscap(15)
 end)
 
 pcall(function()
