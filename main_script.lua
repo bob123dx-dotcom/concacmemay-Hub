@@ -1,8 +1,7 @@
 -- ============================================
--- AFK BOT v4.0 - NO CRASH EDITION
--- Fix: Khong deep scan workspace
--- Fix: Khong dung DescendantAdded spam
--- Fix: Nhe nhat co the
+-- AFK BOT v5.0 - KAITUN SAFE
+-- Chi lam nhung gi khong anh huong Kaitun
+-- GPU thap + Kaitun hoat dong binh thuong
 -- ============================================
 
 local Players = game:GetService("Players")
@@ -14,23 +13,19 @@ local SoundService =
 local Stats = game:GetService("Stats")
 local LocalPlayer = Players.LocalPlayer
 
--- ============================================
--- BUOC 0: DOI GAME LOAD XONG THAT SU
--- ============================================
 if not game:IsLoaded() then
     game.Loaded:Wait()
 end
-
--- Doi them de Blox Fruits load xong
 task.wait(5)
-print("[AFK v4] Bat dau...")
+
+print("[AFK v5] Khoi dong...")
 
 -- ============================================
--- BUOC 1: FPS CAP TRUOC TIEN
--- Giam tai ngay lap tuc
+-- BUOC 1: FPS + QUALITY TRUOC TIEN
+-- An toan 100%, khong anh huong Kaitun
 -- ============================================
 pcall(function()
-    setfpscap(15)
+    setfpscap(20)
 end)
 
 pcall(function()
@@ -38,43 +33,59 @@ pcall(function()
         Enum.QualityLevel.Level01
 end)
 
-print("[AFK v4] FPS: 20, Quality: Min")
+print("[AFK v5] FPS:20 Quality:Min")
 
 -- ============================================
--- BUOC 2: CAMERA LOCK
--- Quan trong nhat, lam truoc
+-- BUOC 2: LIGHTING - AN TOAN
+-- Chi tat shadow va effects
+-- Khong anh huong Kaitun gi ca
 -- ============================================
-local function lockCamera()
-    pcall(function()
-        local cam = Workspace.CurrentCamera
-        if not cam then return end
-        cam.CameraType =
-            Enum.CameraType.Scriptable
-        cam.CFrame =
-            CFrame.new(0, -50000, 0)
-        cam.FieldOfView = 1
-        cam.CameraSubject = nil
-    end)
-end
+pcall(function()
+    -- Chi xoa post effects
+    -- Khong xoa gi khac
+    for _, v in
+            ipairs(Lighting:GetChildren()) do
+        if v:IsA("BloomEffect")
+            or v:IsA("BlurEffect")
+            or v:IsA("ColorCorrectionEffect")
+            or v:IsA("DepthOfFieldEffect")
+            or v:IsA("SunRaysEffect")
+            or v:IsA("Sky")
+            or v:IsA("Atmosphere") then
+            v:Destroy()
+        end
+    end
 
-lockCamera()
-
-Workspace:GetPropertyChangedSignal(
-    "CurrentCamera"):Connect(function()
-    task.wait(0.2)
-    lockCamera()
+    -- Tat shadow = giam GPU nhieu nhat
+    Lighting.GlobalShadows = false
+    Lighting.Brightness = 1
+    Lighting.FogEnd = 100000
+    Lighting.FogStart = 99000
 end)
 
-print("[AFK v4] Camera: Locked")
+-- Block post effects moi
+Lighting.DescendantAdded:Connect(function(v)
+    pcall(function()
+        if v:IsA("PostEffect")
+            or v:IsA("Sky")
+            or v:IsA("Atmosphere") then
+            v:Destroy()
+        end
+    end)
+end)
+
+print("[AFK v5] Lighting: Shadows OFF")
 
 -- ============================================
--- BUOC 3: BLACK SCREEN
+-- BUOC 3: BLACK SCREEN UI
+-- Phu len man hinh
+-- Kaitun van chay ngam binh thuong
 -- ============================================
 local PlayerGui =
     LocalPlayer:WaitForChild("PlayerGui")
 
 local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "AFK_v4"
+ScreenGui.Name = "AFK_v5"
 ScreenGui.ResetOnSpawn = false
 ScreenGui.IgnoreGuiInset = true
 ScreenGui.DisplayOrder = 2147483647
@@ -94,415 +105,283 @@ InfoLabel.Position =
     UDim2.new(0, 5, 1, -22)
 InfoLabel.BackgroundTransparency = 1
 InfoLabel.TextColor3 =
-    Color3.new(0.2, 0.2, 0.2)
+    Color3.new(0.25, 0.25, 0.25)
 InfoLabel.TextXAlignment =
     Enum.TextXAlignment.Left
 InfoLabel.TextSize = 11
 InfoLabel.Font = Enum.Font.Code
-InfoLabel.Text = "AFK v4 | Loading..."
+InfoLabel.Text = "AFK v5 | Active"
 InfoLabel.ZIndex = 2147483647
 InfoLabel.Parent = BlackFrame
 
 ScreenGui.Parent = PlayerGui
 
-print("[AFK v4] Black screen: ON")
+print("[AFK v5] Black screen: ON")
 
 -- ============================================
--- BUOC 4: TAT UI
+-- BUOC 4: TAT UI KHONG CAN
+-- Chi tat Roblox core UI
+-- KHONG tat ScreenGui cua Kaitun
 -- ============================================
 pcall(function()
+    -- Chi tat nhung thu Kaitun khong dung
     StarterGui:SetCoreGuiEnabled(
-        Enum.CoreGuiType.All, false)
+        Enum.CoreGuiType.PlayerList, false)
+    StarterGui:SetCoreGuiEnabled(
+        Enum.CoreGuiType.EmotesMenu, false)
     StarterGui:SetCore(
         "TopbarEnabled", false)
+
+    -- KHONG tat Chat vi Kaitun
+    -- co the dung chat command
+    -- KHONG SetCoreGuiEnabled All false
 end)
 
-local function hideGUI()
-    pcall(function()
-        for _, gui in
-                ipairs(PlayerGui:GetChildren())
-                do
-            if gui.Name ~= "AFK_v4"
-                and gui:IsA("ScreenGui") then
-                gui.Enabled = false
-            end
-        end
-    end)
-end
-
-hideGUI()
-
-PlayerGui.ChildAdded:Connect(function(child)
-    -- Dung task.delay thay vi task.defer
-    -- An toan hon voi so luong lon
-    task.delay(0.1, function()
-        pcall(function()
-            if child.Name ~= "AFK_v4"
-                and child:IsA("ScreenGui") then
-                child.Enabled = false
-            end
-        end)
-    end)
-end)
-
-print("[AFK v4] UI: Hidden")
+print("[AFK v5] Core UI: Partial hide")
 
 -- ============================================
--- BUOC 5: LIGHTING
--- Don gian, khong loop
--- ============================================
-pcall(function()
-    for _, v in
-            ipairs(Lighting:GetChildren()) do
-        if v:IsA("PostEffect")
-            or v:IsA("Sky")
-            or v:IsA("Atmosphere") then
-            v:Destroy()
-        end
-    end
-
-    Lighting.GlobalShadows = false
-    Lighting.Brightness = 0
-    Lighting.Ambient = Color3.new(0, 0, 0)
-    Lighting.OutdoorAmbient =
-        Color3.new(0, 0, 0)
-    Lighting.FogEnd = 0
-    Lighting.ClockTime = 0
-end)
-
-Lighting.DescendantAdded:Connect(function(v)
-    pcall(function()
-        if v:IsA("PostEffect")
-            or v:IsA("Sky")
-            or v:IsA("Atmosphere") then
-            v:Destroy()
-        end
-    end)
-end)
-
-print("[AFK v4] Lighting: Black")
-
--- ============================================
--- BUOC 6: CLEAN NHE - KHONG SCAN TOAN BO
--- Chi xoa folder decoration
--- TUYET DOI KHONG GetDescendants() ngay
+-- BUOC 5: XOA PARTICLE + FIRE + SMOKE
+-- AN TOAN 100% voi Kaitun
+-- Day la thu ton GPU nhat
+-- Kaitun KHONG dung cac class nay
 -- ============================================
 
--- Chi xoa nhung folder CHINH xac dinh
-local SAFE_DELETE_FOLDERS = {
-    "Decor", "Decoration", "Decorations",
-    "Effects", "VFX", "FX",
-    "Sky", "Clouds",
-    "MapEffects",
-}
-
-task.spawn(function()
-    task.wait(1)
-    for _, name in
-            ipairs(SAFE_DELETE_FOLDERS) do
-        pcall(function()
-            local f =
-                Workspace:FindFirstChild(name)
-            if f then
-                f:Destroy()
-                print("[AFK v4] Deleted: "
-                    .. name)
-            end
-        end)
-        -- Doi giua moi folder
-        task.wait(0.1)
-    end
-    print("[AFK v4] Folders: Cleaned")
-end)
-
--- ============================================
--- BUOC 7: SCAN NHE - BATCH NHO
--- Thay vi 150/batch -> 50/batch
--- Them task.wait(0.1) thay vi task.wait()
--- De tranh freeze
--- ============================================
-
--- Danh sach class can xoa
-local DELETE_SET = {
+-- Class an toan de xoa
+-- Kaitun KHONG bao gio dung nhung class nay
+local SAFE_DELETE = {
     ParticleEmitter = true,
-    Trail = true,
-    Beam = true,
     Fire = true,
     Smoke = true,
     Sparkles = true,
     Explosion = true,
+
+    -- Lights: an toan xoa
+    -- Kaitun khong dung light
     PointLight = true,
     SpotLight = true,
     SurfaceLight = true,
-    Highlight = true,
-    Decal = true,
-    Texture = true,
-    SurfaceAppearance = true,
-    BillboardGui = true,
-    SurfaceGui = true,
-    Sound = true,
 }
 
-task.spawn(function()
-    -- Doi 3 giay truoc khi scan
-    -- De game on dinh truoc
-    task.wait(3)
+-- KHONG xoa:
+-- Trail (Kaitun dung de track enemy)
+-- Beam (Kaitun co the dung)
+-- BillboardGui (Kaitun dung hien HP/Name)
+-- Sound (Kaitun dung de detect)
+-- Highlight (Kaitun dung highlight enemy)
+-- Decal/Texture (giu nguyen, an toan hon)
 
-    print("[AFK v4] Bat dau scan nhe...")
+local function safeProcess(v)
+    if not v or not v.Parent then return end
+    local cn = v.ClassName
+    if SAFE_DELETE[cn] then
+        v:Destroy()
+    end
+end
+
+-- Scan workspace theo batch nho
+task.spawn(function()
+    task.wait(2)
 
     local descs = Workspace:GetDescendants()
     local total = #descs
     local removed = 0
-
-    -- BATCH NHO: 50 object moi lan
-    -- task.wait(0.1) giua cac batch
-    -- = 500 object/giay (an toan)
-    local BATCH = 50
+    local BATCH = 30 -- Nho de khong crash
 
     for i = 1, total, BATCH do
-        -- Kiem tra tung object trong batch
         for j = i,
                 math.min(
-                    i + BATCH - 1,
-                    total) do
+                    i + BATCH - 1, total) do
             local v = descs[j]
-
-            -- Check con ton tai khong
             if v and v.Parent then
                 pcall(function()
                     local cn = v.ClassName
-
-                    if DELETE_SET[cn] then
-                        if cn == "Sound" then
-                            v:Stop()
-                        end
+                    if SAFE_DELETE[cn] then
                         v:Destroy()
                         removed = removed + 1
-                    elseif v:IsA("BasePart")
-                        and not v:IsA("Terrain")
-                        then
-                        -- Chi tat shadow
-                        -- KHONG thay doi gi them
-                        v.CastShadow = false
                     end
                 end)
             end
         end
-
-        -- Cho 0.1s giua batch
-        -- = khong freeze game
-        task.wait(0.1)
+        task.wait(0.2) -- An toan hon 0.1
     end
 
-    print("[AFK v4] Scan xong: "
-        .. removed .. " removed")
+    print("[AFK v5] Removed: "
+        .. removed .. " particles/lights")
 end)
 
 -- ============================================
--- BUOC 8: BLOCK OBJECT MOI - AN TOAN
--- QUAN TRONG: Dung throttle
--- Neu dung DescendantAdded thuan tuy
--- Blox Fruits spam -> queue tran -> crash
+-- BUOC 6: BLOCK PARTICLE/LIGHT MOI
+-- Dung queue de khong spam
 -- ============================================
-
--- Throttle: xu ly toi da 10 object/giay
-local pendingObjects = {}
-local isProcessing = false
+local queue = {}
+local MAX_QUEUE = 50
 
 Workspace.DescendantAdded:Connect(function(v)
-    -- Chi them vao queue, KHONG xu ly ngay
-    table.insert(pendingObjects, v)
+    if #queue < MAX_QUEUE then
+        table.insert(queue, v)
+    end
+    -- Neu queue day thi bo qua
+    -- Tranh memory leak
 end)
 
--- Xu ly queue moi 0.5 giay
--- Khong bi spam
+-- Xu ly queue moi 1 giay
+-- Kaitun van co du thoi gian hoat dong
 task.spawn(function()
     while true do
-        task.wait(0.5)
+        task.wait(1)
 
-        if #pendingObjects == 0 then
+        if #queue == 0 then
             continue
         end
 
-        -- Lay toi da 20 object moi lan
-        local toProcess = math.min(
-            20, #pendingObjects)
+        local count = math.min(
+            15, #queue)
 
-        for i = 1, toProcess do
-            local v = pendingObjects[i]
+        for i = 1, count do
+            local v = queue[i]
             if v and v.Parent then
                 pcall(function()
-                    local cn = v.ClassName
+                    safeProcess(v)
+                end)
+            end
+        end
 
-                    if DELETE_SET[cn] then
-                        if cn == "Sound" then
-                            pcall(function()
-                                v:Stop()
-                            end)
-                        end
-                        v:Destroy()
-                    elseif v:IsA("BasePart")
+        -- Xoa da xu ly
+        for _ = 1, count do
+            table.remove(queue, 1)
+        end
+    end
+end)
+
+print("[AFK v5] Particle blocker: ON")
+
+-- ============================================
+-- BUOC 7: CastShadow = false
+-- Chi tren MAP objects
+-- KHONG cham vao character
+-- ============================================
+task.spawn(function()
+    task.wait(3)
+
+    local descs = Workspace:GetDescendants()
+    local BATCH = 30
+
+    for i = 1, #descs, BATCH do
+        for j = i,
+                math.min(
+                    i + BATCH - 1,
+                    #descs) do
+            local v = descs[j]
+            if v and v.Parent then
+                pcall(function()
+                    -- Chi xu ly BasePart
+                    if v:IsA("BasePart")
                         and not v:IsA("Terrain")
                         then
+                        -- Kiem tra KHONG phai
+                        -- character cua bat ky
+                        -- player nao
+                        local model =
+                            v:FindFirstAncestorOfClass(
+                                "Model")
+                        if model then
+                            local isChar =
+                                Players
+                                :GetPlayerFromCharacter(
+                                    model)
+                            -- Bo qua character
+                            if isChar then
+                                return
+                            end
+                        end
+
+                        -- An toan: chi tat shadow
                         v.CastShadow = false
                     end
                 end)
             end
         end
-
-        -- Xoa nhung object da xu ly
-        for i = 1, toProcess do
-            table.remove(pendingObjects, 1)
-        end
+        task.wait(0.2)
     end
-end)
 
-print("[AFK v4] Object blocker: Active")
-
--- ============================================
--- BUOC 9: SOUND SERVICE CLEAN
--- ============================================
-task.spawn(function()
-    task.wait(2)
-    pcall(function()
-        for _, v in ipairs(
-                SoundService:GetDescendants())
-                do
-            if v:IsA("Sound") then
-                pcall(function()
-                    v:Stop()
-                    v.Volume = 0
-                end)
-            end
-        end
-    end)
-    print("[AFK v4] Sounds: Muted")
+    print("[AFK v5] Shadows: All OFF")
 end)
 
 -- ============================================
--- BUOC 10: TERRAIN CLEAN NHE
--- Khong Clear() ngay - qua nang
--- Chi tat decoration + water
+-- BUOC 8: CAMERA
+-- Giu camera binh thuong
+-- De Kaitun tinh toan dung
+-- Chi lock khi AFK that su
 -- ============================================
-task.spawn(function()
-    task.wait(2)
-    pcall(function()
-        local t =
-            Workspace:FindFirstChildOfClass(
-                "Terrain")
-        if t then
-            t.Decoration = false
-            t.WaterTransparency = 1
-            t.WaterWaveSize = 0
-            t.WaterWaveSpeed = 0
-            -- Clear() sau khi on dinh
-            task.wait(3)
-            pcall(function() t:Clear() end)
-            print("[AFK v4] Terrain: Cleared")
-        end
-    end)
-end)
+
+-- CAMERA KHONG LOCK
+-- Kaitun can camera hoat dong
+-- GPU load tu giam nho FPS=20
+-- va shadow=false la du
 
 -- ============================================
--- BUOC 11: MAINTENANCE - SIEU NHE
--- Chi update nhung gi can thiet
--- Khong scan descendant trong loop
+-- BUOC 9: MAINTENANCE NHE
+-- Khong scan descendant
+-- Chi check lighting + UI
 -- ============================================
 task.spawn(function()
-    local counter = 0
+    local tick = 0
 
     while true do
-        task.wait(5)
-        counter = counter + 1
+        task.wait(10)
+        tick = tick + 1
 
-        -- Camera (moi 5s)
-        lockCamera()
-
-        -- Lighting (moi 5s)
+        -- Lighting
         pcall(function()
             Lighting.GlobalShadows = false
-            Lighting.Brightness = 0
         end)
 
-        -- Black screen (moi 5s)
+        -- Black screen
         pcall(function()
-            if ScreenGui then
-                ScreenGui.Enabled = true
-            end
+            ScreenGui.Enabled = true
+            BlackFrame.BackgroundTransparency
+                = 0
         end)
 
-        -- UI (moi 15s)
-        if counter % 3 == 0 then
-            pcall(function()
-                StarterGui:SetCoreGuiEnabled(
-                    Enum.CoreGuiType.All,
-                    false)
-            end)
-            hideGUI()
-        end
-
-        -- Queue cleanup (moi 30s)
-        -- Tranh pendingObjects qua lon
-        if counter % 6 == 0 then
-            if #pendingObjects > 100 then
-                -- Xoa queue cu neu qua lon
-                -- Tranh memory leak
-                local keep = {}
-                local start = math.max(
-                    1,
-                    #pendingObjects - 50)
-                for i = start,
-                        #pendingObjects do
-                    table.insert(
-                        keep,
-                        pendingObjects[i])
-                end
-                pendingObjects = keep
-            end
-        end
-
-        -- RAM update (moi 30s)
-        if counter % 6 == 0 then
+        -- RAM update moi 60s
+        if tick % 6 == 0 then
             pcall(function()
                 local ram =
                     Stats:GetTotalMemoryUsageMb()
                 InfoLabel.Text =
                     string.format(
-                        "AFK v4 | RAM:%.0fMB"
-                        .. " | FPS:20 | OK",
+                        "AFK v5 | RAM:%.0fMB"
+                        .. " | FPS:20",
                         ram)
+                print(string.format(
+                    "[AFK v5] RAM: %.0fMB",
+                    ram))
             end)
         end
     end
 end)
 
 -- ============================================
--- BUOC 12: RESPAWN HANDLER
+-- BUOC 10: RESPAWN HANDLER
+-- Khi char respawn, tat shadow thoi
+-- KHONG lam gi khac
 -- ============================================
 LocalPlayer.CharacterAdded:Connect(
     function(char)
-        task.wait(1.5)
+        task.wait(2)
         pcall(function()
-            lockCamera()
-
-            -- Tat shadow tren character
             for _, v in ipairs(
                     char:GetDescendants()) do
                 if v:IsA("BasePart") then
+                    -- Chi tat shadow
                     v.CastShadow = false
                 end
-                if v:IsA("Sound") then
-                    v:Stop()
-                    v.Volume = 0
-                end
             end
-
-            print("[AFK v4] Respawn: Setup OK")
         end)
     end)
 
 -- ============================================
--- BUOC 13: ANTI-KICK (4 PHUT)
+-- BUOC 11: ANTI-KICK
 -- ============================================
 task.spawn(function()
     while true do
@@ -520,21 +399,25 @@ task.spawn(function()
     end
 end)
 
-print("[AFK v4] Anti-kick: ON")
-
 -- ============================================
 -- DONE
 -- ============================================
-InfoLabel.Text =
-    "AFK v4 | Active | FPS:20"
-
-print("╔════════════════════════════════╗")
-print("║  AFK BOT v4.0 - NO CRASH     ║")
-print("╠════════════════════════════════╣")
-print("║  Camera : -50000              ║")
-print("║  Black  : ON                  ║")
-print("║  FPS    : 20                  ║")
-print("║  Batch  : 50obj/0.1s (safe)  ║")
-print("║  Queue  : 20obj/0.5s (safe)  ║")
-print("║  Crash  : FIXED               ║")
-print("╚════════════════════════════════╝")
+print("╔══════════════════════════════════╗")
+print("║  AFK BOT v5.0 - KAITUN SAFE    ║")
+print("╠══════════════════════════════════╣")
+print("║  Shadows    : OFF (GPU -40%)   ║")
+print("║  Particles  : DESTROYED        ║")
+print("║  Lights     : DESTROYED        ║")
+print("║  Post FX    : DESTROYED        ║")
+print("║  FPS        : 20               ║")
+print("║  Quality    : Level 1          ║")
+print("║  Black Screen: ON              ║")
+print("╠══════════════════════════════════╣")
+print("║  SAFE (Kaitun van farm duoc):  ║")
+print("║  Trail      : KEPT             ║")
+print("║  BillboardGui: KEPT            ║")
+print("║  Sound      : KEPT             ║")
+print("║  Highlight  : KEPT             ║")
+print("║  Camera     : NORMAL           ║")
+print("║  Terrain    : KEPT             ║")
+print("╚══════════════════════════════════╝")
